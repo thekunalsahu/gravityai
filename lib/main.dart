@@ -56,59 +56,100 @@ class _LandingPageState extends State<LandingPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          Container(width: double.infinity, height: double.infinity, decoration: const BoxDecoration(image: DecorationImage(image: AssetImage(kEarthImg), fit: BoxFit.cover))),
-          Positioned(
-            top: 40, left: 40, 
-            child: SizedBox(
-              width: 500,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start, 
-                children: [
-                  Row(
-                    children: [
-                      Image.asset("assets/images/logo.png", height: 75),
-                      const SizedBox(width: 8),
-                      const Text("Gravity AI", style: TextStyle(fontSize: 55, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: -1.0)),
-                    ],
-                  ),
-                  const SizedBox(height: 50), 
-                  _buildLoginCard("OFFICER PORTAL", Icons.admin_panel_settings, Colors.blueAccent, true),
-                  const SizedBox(height: 25),
-                  _buildLoginCard("PUBLIC ACCESS", Icons.public, Colors.greenAccent, false),
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            top: 40, right: 80, 
-            child: SizedBox(
-              width: 400,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                  child: Container(
-                    padding: const EdgeInsets.all(25),
-                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.35), border: Border.all(color: Colors.white.withOpacity(0.15))),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          bool isMobile = constraints.maxWidth < 900;
+          
+          if (isMobile) {
+            return Container(
+              width: double.infinity,
+              height: double.infinity,
+              decoration: const BoxDecoration(image: DecorationImage(image: AssetImage(kEarthImg), fit: BoxFit.cover)),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 40),
+                    Row(
                       children: [
-                        Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: Colors.orangeAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(8)), child: const Text("POWERED BY ISRO BHUVAN", style: TextStyle(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.5))),
-                        const SizedBox(height: 15), const Text("Developed by Team Tensor Titans, Gravity is a Next-Generation Geospatial Intelligence platform for urban administration.", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, height: 1.4)),
-                        const SizedBox(height: 15),
-                        Text("• Core Engine: Powered by Siam-UNet Neural Networks.\n\n• ISRO Bhuvan Integration: Leverages indigenous Indian satellite imagery, 3D terrain models, and WMS/WFS services for hyper-precise boundary mapping.\n\n• Capabilities: Real-time encroachment tracking via GeoJSON Bhu-Naksha referencing.\n\n• Actionable Intelligence: Automated eviction notices and bulldozer deployment.", style: TextStyle(color: Colors.white.withOpacity(0.8), height: 1.5, fontSize: 13)),
+                        Image.asset("assets/images/logo.png", height: 50),
+                        const SizedBox(width: 8),
+                        const Expanded(child: Text("Gravity AI", style: TextStyle(fontSize: 35, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: -1.0))),
                       ],
                     ),
+                    const SizedBox(height: 30),
+                    _buildLoginCard("OFFICER PORTAL", Icons.admin_panel_settings, Colors.blueAccent, true),
+                    const SizedBox(height: 20),
+                    _buildLoginCard("PUBLIC ACCESS", Icons.public, Colors.greenAccent, false),
+                    const SizedBox(height: 30),
+                    _buildDetailsCard(),
+                    const SizedBox(height: 40),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return Stack(
+            children: [
+              Container(width: double.infinity, height: double.infinity, decoration: const BoxDecoration(image: DecorationImage(image: AssetImage(kEarthImg), fit: BoxFit.cover))),
+              Positioned(
+                top: 40, left: 40, 
+                child: SizedBox(
+                  width: 450,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start, 
+                    children: [
+                      Row(
+                        children: [
+                          Image.asset("assets/images/logo.png", height: 75),
+                          const SizedBox(width: 8),
+                          const Text("Gravity AI", style: TextStyle(fontSize: 55, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: -1.0)),
+                        ],
+                      ),
+                      const SizedBox(height: 50), 
+                      _buildLoginCard("OFFICER PORTAL", Icons.admin_panel_settings, Colors.blueAccent, true),
+                      const SizedBox(height: 25),
+                      _buildLoginCard("PUBLIC ACCESS", Icons.public, Colors.greenAccent, false),
+                    ],
                   ),
                 ),
               ),
-            ),
+              Positioned(
+                top: 40, right: 80, 
+                child: SizedBox(
+                  width: 400,
+                  child: _buildDetailsCard(),
+                ),
+              ),
+            ],
+          );
+        }
+      ),
+    );
+  }
+
+  Widget _buildDetailsCard() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          padding: const EdgeInsets.all(25),
+          decoration: BoxDecoration(color: Colors.black.withOpacity(0.35), border: Border.all(color: Colors.white.withOpacity(0.15))),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: Colors.orangeAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(8)), child: const Text("POWERED BY ISRO BHUVAN", style: TextStyle(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.5))),
+              const SizedBox(height: 15), const Text("Developed by Team Tensor Titans, Gravity is a Next-Generation Geospatial Intelligence platform for urban administration.", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, height: 1.4)),
+              const SizedBox(height: 15),
+              Text("• Core Engine: Powered by Siam-UNet Neural Networks.\n\n• ISRO Bhuvan Integration: Leverages indigenous Indian satellite imagery, 3D terrain models, and WMS/WFS services for hyper-precise boundary mapping.\n\n• Capabilities: Real-time encroachment tracking via GeoJSON Bhu-Naksha referencing.\n\n• Actionable Intelligence: Automated eviction notices and bulldozer deployment.", style: TextStyle(color: Colors.white.withOpacity(0.8), height: 1.5, fontSize: 13)),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
