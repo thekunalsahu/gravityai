@@ -10,6 +10,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:file_picker/file_picker.dart';
 
 // ========================================================
 // GLOBAL CONFIG
@@ -560,8 +561,9 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         ] else ...[
           const Text("NOTE: Administrative tools disabled for guests.", style: TextStyle(color: Colors.orangeAccent, fontSize: 11, fontStyle: FontStyle.italic))
         ]
-      ]
-    ])));
+        ]
+      ],
+    ));
   }
 
   Widget _stat(String t, String v, Color c) => Container(margin: const EdgeInsets.only(bottom: 10), width: double.infinity, padding: const EdgeInsets.all(15), decoration: BoxDecoration(color: const Color(0xFF1E293B).withOpacity(0.5), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white10)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(t, style: const TextStyle(color: Colors.white70, fontSize: 12)), const SizedBox(height: 5), Text(v, style: TextStyle(color: c, fontSize: 24, fontWeight: FontWeight.bold))]));
@@ -797,7 +799,12 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                                             Icon(Icons.file_upload_outlined, size: 40, color: Colors.cyanAccent.withOpacity(0.7)),
                                             const SizedBox(height: 10),
                                             InkWell(
-                                              onTap: () { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("File selected successfully!"), backgroundColor: Colors.green)); },
+                                              onTap: () async { 
+                                                FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'png', 'jpg', 'jpeg', 'geojson']);
+                                                if (result != null && context.mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("File uploaded: ${result.files.single.name}"), backgroundColor: Colors.green));
+                                                }
+                                              },
                                               child: RichText(textAlign: TextAlign.center, text: const TextSpan(children: [
                                                 TextSpan(text: "Drag & Drop Photos or PDF Reports Here or ", style: TextStyle(color: Colors.white70)),
                                                 TextSpan(text: "Browse", style: TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
