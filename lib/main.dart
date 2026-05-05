@@ -99,12 +99,11 @@ class _LandingPageState extends State<LandingPage> {
               Container(
                 width: double.infinity, 
                 height: double.infinity, 
-                color: const Color(0xFF020617), // Deep Dark Blue Fallback
                 decoration: const BoxDecoration(
+                  color: Color(0xFF020617),
                   image: DecorationImage(
                     image: AssetImage(kEarthImg), 
                     fit: BoxFit.cover,
-                    onError: (_, __) {} // Prevents crash if image missing
                   )
                 )
               ),
@@ -886,6 +885,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     showDialog(context: context, builder: (c) => StatefulBuilder(
       builder: (context, setDialogState) {
         String _t(String en, String hi) => _isHindi ? hi : en;
+        final bool isMobile = MediaQuery.of(context).size.width < 900;
         return Dialog(
           backgroundColor: const Color(0xFF0F172A), 
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.white24)),
@@ -1366,7 +1366,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   }
   
   Widget _footer() => Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 8), color: const Color(0xFF0B1221), child: const Center(child: Text("Gravity AI - Powered by ISRO Bhuvan - Siam-UNet Neural Networks", style: TextStyle(color: Colors.white54, fontSize: 11))));
-  Widget _buildBoot() => Scaffold(backgroundColor: Colors.black, body: Container(width: double.infinity, height: double.infinity, color: const Color(0xFF020617), decoration: const BoxDecoration(image: DecorationImage(image: AssetImage(kEarthImg), fit: BoxFit.cover, onError: (_, __) {})), child: Align(alignment: Alignment.centerLeft, child: Padding(padding: const EdgeInsets.only(left: 40.0), child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Image.asset("assets/images/logo.png", height: 75, errorBuilder: (c, e, s) => const Icon(Icons.auto_awesome, color: Colors.cyanAccent, size: 40)), const SizedBox(width: 8), const Text("Gravity AI", style: TextStyle(fontSize: 55, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: -1.0))]), const SizedBox(height: 40), Container(width: 300, height: 4, decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(2)), child: Stack(children: [ AnimatedContainer(duration: const Duration(milliseconds: 250), width: 300 * _bootProgress, height: 4, decoration: const BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.white54, blurRadius: 10)])) ])), const SizedBox(height: 20), const Text("> INITIATING KERNEL...", style: TextStyle(color: Colors.white70, fontFamily: 'monospace', letterSpacing: 1.5, fontSize: 13))])))));
+  Widget _buildBoot() => Scaffold(backgroundColor: const Color(0xFF020617), body: Container(width: double.infinity, height: double.infinity, decoration: const BoxDecoration(color: Color(0xFF020617), image: DecorationImage(image: AssetImage(kEarthImg), fit: BoxFit.cover)), child: Align(alignment: Alignment.centerLeft, child: Padding(padding: const EdgeInsets.only(left: 40.0), child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Image.asset("assets/images/logo.png", height: 75, errorBuilder: (c, e, s) => const Icon(Icons.auto_awesome, color: Colors.cyanAccent, size: 40)), const SizedBox(width: 8), const Text("Gravity AI", style: TextStyle(fontSize: 55, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: -1.0))]), const SizedBox(height: 40), Container(width: 300, height: 4, decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(2)), child: Stack(children: [ AnimatedContainer(duration: const Duration(milliseconds: 250), width: 300 * _bootProgress, height: 4, decoration: const BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.white54, blurRadius: 10)])) ])), const SizedBox(height: 20), const Text("> INITIATING KERNEL...", style: TextStyle(color: Colors.white70, fontFamily: 'monospace', letterSpacing: 1.5, fontSize: 13))])))));
   void _showChatbot() {
     setState(() => _showChat = true);
     showModalBottomSheet(

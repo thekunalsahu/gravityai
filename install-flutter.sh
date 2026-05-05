@@ -18,6 +18,6 @@ echo "Fetching dependencies..."
 
 # Build Web
 echo "Building Flutter Web..."
-./flutter/bin/flutter build web --release --dart-define=GROQ_API_KEY=$GROQ_API_KEY --web-renderer html
+./flutter/bin/flutter build web --release --dart-define=GROQ_API_KEY=$GROQ_API_KEY
 
 echo "Build complete!"
