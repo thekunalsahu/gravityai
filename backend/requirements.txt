@@ -3,3 +3,5 @@ uvicorn
 pydantic
 python-multipart
 mangum
+requests
+python-dotenv

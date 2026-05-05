@@ -11,12 +11,14 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
+import 'dart:js' as js;
 
 // ========================================================
 // GLOBAL CONFIG
 // ========================================================
 const String kBackendUrl = "https://gravityai-backend.onrender.com/"; 
 const String kEarthImg = "assets/images/background.png";
+const String kGroqKey = String.fromEnvironment('GROQ_API_KEY', defaultValue: ''); 
 
 void main() { runApp(const GravityApp()); }
 
@@ -96,32 +98,32 @@ class _LandingPageState extends State<LandingPage> {
             children: [
               Container(width: double.infinity, height: double.infinity, decoration: const BoxDecoration(image: DecorationImage(image: AssetImage(kEarthImg), fit: BoxFit.cover))),
               Positioned(
-                top: 40, left: 40, 
+                top: MediaQuery.of(context).size.height * 0.15, left: MediaQuery.of(context).size.width * 0.08, 
                 child: SizedBox(
-                  width: 450,
+                  width: 550,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start, 
                     children: [
                       Row(
                         children: [
-                          Image.asset("assets/images/logo.png", height: 75),
-                          const SizedBox(width: 8),
-                          const Text("Gravity AI", style: TextStyle(fontSize: 55, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: -1.0)),
+                          Image.asset("assets/images/logo.png", height: 85),
+                          const SizedBox(width: 12),
+                          const Text("Gravity AI", style: TextStyle(fontSize: 65, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: -1.0)),
                         ],
                       ),
-                      const SizedBox(height: 50), 
+                      const SizedBox(height: 60), 
                       _buildLoginCard("OFFICER PORTAL", Icons.admin_panel_settings, Colors.blueAccent, true),
-                      const SizedBox(height: 25),
+                      const SizedBox(height: 30),
                       _buildLoginCard("PUBLIC ACCESS", Icons.public, Colors.greenAccent, false),
                     ],
                   ),
                 ),
               ),
               Positioned(
-                top: 40, right: 80, 
+                top: MediaQuery.of(context).size.height * 0.15, right: MediaQuery.of(context).size.width * 0.08, 
                 child: SizedBox(
-                  width: 400,
+                  width: 500,
                   child: _buildDetailsCard(),
                 ),
               ),
@@ -144,7 +146,7 @@ class _LandingPageState extends State<LandingPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: Colors.orangeAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(8)), child: const Text("POWERED BY ISRO BHUVAN", style: TextStyle(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.5))),
+              Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: Colors.orangeAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(8)), child: Row(mainAxisSize: MainAxisSize.min, children: [const Text("POWERED BY ISRO BHUVAN", style: TextStyle(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.5)), const SizedBox(width: 8), const BlinkingLight(color: Colors.greenAccent)])),
               const SizedBox(height: 15), const Text("Developed by Team Tensor Titans, Gravity is a Next-Generation Geospatial Intelligence platform for urban administration.", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, height: 1.4)),
               const SizedBox(height: 15),
               Text("• Core Engine: Powered by Siam-UNet Neural Networks.\n\n• ISRO Bhuvan Integration: Leverages indigenous Indian satellite imagery, 3D terrain models, and WMS/WFS services for hyper-precise boundary mapping.\n\n• Capabilities: Real-time encroachment tracking via GeoJSON Bhu-Naksha referencing.\n\n• Actionable Intelligence: Automated eviction notices and bulldozer deployment.", style: TextStyle(color: Colors.white.withOpacity(0.8), height: 1.5, fontSize: 13)),
@@ -211,6 +213,7 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> with TickerProviderStateMixin {
   final TextEditingController _searchCtrl = TextEditingController();
+  final TextEditingController _areaCtrl = TextEditingController();
   final MapController _mapCtrl = MapController();
 
   bool _booting = true;
@@ -224,7 +227,10 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   List<Polygon> _anomalyPolygons = [];
   List<Polygon> _govtPolygons = [];
 
-  int _risk = 0; int _area = 0; double _val = 0.0; int _veg = 0; int _rehab = 0; String _notice = ""; double _fine = 0.0;
+  int _risk = 0, _area = 0, _veg = 0;
+  double _val = 0.0, _fine = 0.0, _accuracy = 100.0;
+  Map<String, dynamic> _envData = {"temp": 32, "aqi": 145, "soil": "Alluvial", "moisture": 45};
+  String _notice = "";
   bool _evictSent = false; int _timerSecs = 0; Timer? _timer; bool _canDemolish = false;
   String _stateName = "MADHYA PRADESH";
   List<Map<String, String>> _tasksList = [];
@@ -232,8 +238,18 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   // Navigation State
   int _navIndex = 0; // 0: Dashboard, 1: Map, 2: Reports, 3: Tasks
 
+  // New Feature State
+  bool _isHindi = false;
+  bool _isAnonymous = false;
+  int _karmaPoints = 450;
+  final List<Map<String, String>> _chatMsgs = [{"role": "ai", "text": "Hello Officer. I am Gravity AI. How can I assist you with urban administration today?"}];
+  bool _showChat = false;
+  final TextEditingController _chatCtrl = TextEditingController();
+  bool _isSatellite = true; // Satellite Layer Toggle
+  bool _showBhuvanWms = false; // Bhuvan WMS Layer Toggle
+
   @override void initState() { super.initState(); _bootSequence(); }
-  @override void dispose() { _timer?.cancel(); _searchCtrl.dispose(); super.dispose(); }
+  @override void dispose() { _timer?.cancel(); _searchCtrl.dispose(); _chatCtrl.dispose(); super.dispose(); }
 
   void _bootSequence() async {
     for (int i = 0; i <= 10; i++) {
@@ -244,9 +260,26 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     if (mounted) setState(() => _booting = false);
   }
 
+  void _speak(String text) {
+    try {
+      // Use JavaScript interop to call browser TTS
+      js.context.callMethod('eval', ["""
+        var msg = new SpeechSynthesisUtterance(`${text.replaceAll('`', "'")}`);
+        msg.lang = 'en-US';
+        msg.rate = 0.9;
+        window.speechSynthesis.speak(msg);
+      """]);
+    } catch (e) {
+      print("TTS Error: $e");
+    }
+  }
+
   // --- API FIX: ADDED TIMEOUT AND MOUNTED CHECKS ---
   Future<void> _runScan() async {
     String query = _searchCtrl.text.trim();
+    if (_areaCtrl.text.trim().isNotEmpty) {
+      query = "${_areaCtrl.text.trim()}, $query";
+    }
     if (query.isEmpty) return;
     
     _timer?.cancel();
@@ -276,7 +309,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         final res = await http.get(
           Uri.parse('https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}, India&format=json&limit=1&addressdetails=1'), 
           headers: {'User-Agent': 'Gravity-Titans'}
-        ).timeout(const Duration(seconds: 10));
+        ).timeout(const Duration(seconds: 30));
         
         final d = json.decode(res.body);
         if (d == null || d.isEmpty) throw "Location not found";
@@ -297,7 +330,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         Uri.parse('$kBackendUrl/api/scan'), 
         headers: {'Content-Type': 'application/json'}, 
         body: json.encode({'lat': lat, 'lon': lon, 'sector': query})
-      ).timeout(const Duration(seconds: 30));
+      ).timeout(const Duration(seconds: 90));
       
       if (apiRes.statusCode == 200) {
         final data = json.decode(apiRes.body);
@@ -309,20 +342,50 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
 
         if (!mounted) return;
         setState(() {
-          _scanning = false; _ready = true; _status = "✅ ANALYSIS COMPLETE.";
+          _scanning = false; _ready = true;
+          _status = "✅ ANALYSIS COMPLETE — ${data['accuracy']}% CONFIDENCE";
           _risk = data['increased_area_pct'] ?? 0;
           _area = data['area_sqm'] ?? 0;
           _val = (data['land_value'] ?? 0.0).toDouble();
           _fine = (data['penalty'] ?? 0.0).toDouble();
           _veg = data['green_loss'] ?? 0;
-          _rehab = data['pmay_families'] ?? 0;
+          _accuracy = (data['accuracy'] ?? 100.0).toDouble();
+          if (data['env_data'] != null) {
+            _envData = Map<String, dynamic>.from(data['env_data']);
+          }
           _notice = data['legal_notice_text'] ?? "Unauthorized construction detected.";
           
-          if (data['anomaly_polygon'] != null) {
-            _anomalyPolygons.add(Polygon(points: _parsePoly(data['anomaly_polygon']), color: Colors.red.withOpacity(0.4), borderColor: Colors.redAccent, borderStrokeWidth: 3, isFilled: true));
-          }
+          String voiceSum = data['voice_summary'] ?? "Scan complete.";
+          _speak(voiceSum);
+
+          // Government Boundary — Blue
           if (data['govt_boundary'] != null) {
-             _govtPolygons.add(Polygon(points: _parsePoly(data['govt_boundary']), color: Colors.blue.withOpacity(0.15), borderColor: Colors.blueAccent, borderStrokeWidth: 4, isFilled: true));
+             _govtPolygons.add(Polygon(points: _parsePoly(data['govt_boundary']), color: Colors.blue.withValues(alpha: 0.12), borderColor: Colors.blueAccent, borderStrokeWidth: 4, isFilled: true));
+          }
+
+          // Encroaching Buildings (on Govt land) — RED
+          if (data['encroaching_buildings'] != null) {
+            for (var building in data['encroaching_buildings']) {
+              var pts = _parsePoly(building);
+              if (pts.length >= 3) {
+                _anomalyPolygons.add(Polygon(points: pts, color: Colors.red.withValues(alpha: 0.5), borderColor: Colors.redAccent, borderStrokeWidth: 2, isFilled: true));
+              }
+            }
+          }
+
+          // Legal Buildings (outside Govt land) — GREEN
+          if (data['legal_buildings'] != null) {
+            for (var building in data['legal_buildings']) {
+              var pts = _parsePoly(building);
+              if (pts.length >= 3) {
+                _govtPolygons.add(Polygon(points: pts, color: Colors.green.withValues(alpha: 0.2), borderColor: Colors.greenAccent, borderStrokeWidth: 1, isFilled: true));
+              }
+            }
+          }
+
+          // Fallback for old-style anomaly_polygon
+          if (data['anomaly_polygon'] != null && data['encroaching_buildings'] == null) {
+            _anomalyPolygons.add(Polygon(points: _parsePoly(data['anomaly_polygon']), color: Colors.red.withValues(alpha: 0.4), borderColor: Colors.redAccent, borderStrokeWidth: 3, isFilled: true));
           }
         });
       } else { throw "Server Error: ${apiRes.statusCode}"; }
@@ -330,8 +393,8 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       if (mounted) {
         setState(() { 
           _scanning = false; 
-          _status = e.toString().contains("Timeout") ? "❌ TIMEOUT: SERVER BUSY" : "❌ CONNECTION ERROR"; 
-        }); 
+          _status = e.toString().contains("Timeout") ? "❌ TIMEOUT: SERVER TOOK TOO LONG" : "❌ ERROR: $e"; 
+        });
       }
     }
   }
@@ -342,11 +405,17 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     
     return LayoutBuilder(
       builder: (context, constraints) {
-        bool isMobile = constraints.maxWidth < 1100;
+        bool isMobile = constraints.maxWidth < 900;
 
         return Scaffold(
           backgroundColor: const Color(0xFF070B19),
           drawer: isMobile ? _mobileDrawer() : null,
+          floatingActionButton: widget.isOfficer ? FloatingActionButton.extended(
+            onPressed: _showChatbot,
+            backgroundColor: Colors.cyanAccent,
+            icon: const Icon(Icons.auto_awesome, color: Colors.black87),
+            label: const Text("Gravity AI", style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
+          ) : null,
           body: Row(
             children: [
               if (!isMobile) _sidebar(),
@@ -471,7 +540,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            SizedBox(height: 400, child: _mapView(isMobile)),
+            SizedBox(height: MediaQuery.of(context).size.height * 0.5, child: _mapView(isMobile)),
             const SizedBox(height: 12),
             _rightPanel(isMobile),
           ],
@@ -479,7 +548,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       );
     }
 
-    return Padding(padding: const EdgeInsets.all(12.0), child: Row(children: [Expanded(flex: 7, child: _mapView(isMobile)), const SizedBox(width: 12), _rightPanel(isMobile)]));
+    return Padding(padding: const EdgeInsets.all(8.0), child: Row(children: [Expanded(flex: 7, child: _mapView(isMobile)), const SizedBox(width: 8), Expanded(flex: 3, child: _rightPanel(isMobile))]));
   }
 
   Widget _sidebar() {
@@ -512,6 +581,17 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         if (widget.isOfficer) ...[ const Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [Text("Officer Sharma", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)), Text("(ID: OS7892)", style: TextStyle(color: Colors.white54, fontSize: 11))]), const SizedBox(width: 10), const CircleAvatar(backgroundColor: Colors.blueGrey, child: Icon(Icons.person, color: Colors.white)) ]
         else ...[ const Text("GUEST USER", style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 14)) ],
       ],
+      const SizedBox(width: 15),
+      Stack(
+        clipBehavior: Clip.none,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.notifications_none, color: Colors.white), 
+            onPressed: () => _showNotificationPanel(),
+          ),
+          if (_tasksList.isNotEmpty) Positioned(top: 8, right: 8, child: Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle)))
+        ],
+      ),
       const SizedBox(width: 10), IconButton(onPressed: () { _timer?.cancel(); Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => const LandingPage())); }, icon: const Icon(Icons.logout, color: Colors.white54))
     ]));
   }
@@ -519,23 +599,71 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   Widget _mapView(bool isMobile) {
     return ClipRRect(borderRadius: BorderRadius.circular(12), child: Stack(children: [
       FlutterMap(mapController: _mapCtrl, options: MapOptions(initialCenter: _loc, initialZoom: _currentZoom), children: [
-        TileLayer(urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'),
+        TileLayer(urlTemplate: _isSatellite
+          ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+          : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.gravity.ai',
+        ),
+        if (_showBhuvanWms) TileLayer(
+          urlTemplate: 'https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=lulc:ap_lulc_50k_1516&STYLE=default&TILEMATRIXSET=EPSG:900913&TILEMATRIX=EPSG:900913:{z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png',
+          userAgentPackageName: 'com.gravity.ai',
+        ),
         PolygonLayer(polygons: _govtPolygons), PolygonLayer(polygons: _anomalyPolygons),
       ]),
-      Positioned(top: 15, right: 15, left: isMobile ? 15 : null, child: Container(width: isMobile ? null : 350, decoration: BoxDecoration(color: const Color(0xFF0B1221).withOpacity(0.9), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white24)), child: Row(children: [Expanded(child: TextField(controller: _searchCtrl, style: const TextStyle(color: Colors.white, fontSize: 13), decoration: const InputDecoration(hintText: "Search Area...", hintStyle: TextStyle(color: Colors.white54, fontSize: 12), border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 12)), onSubmitted: (_) => _scanning ? null : _runScan())), IconButton(icon: _scanning ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.cyanAccent)) : const Icon(Icons.search, color: Colors.white, size: 20), onPressed: _scanning ? null : _runScan)]))),
+      Positioned(top: 15, right: 15, left: isMobile ? 15 : null, child: Container(width: isMobile ? null : 350, decoration: BoxDecoration(color: const Color(0xFF0B1221).withOpacity(0.9), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white24)), child: Row(children: [Expanded(child: Column(mainAxisSize: MainAxisSize.min, children: [TextField(controller: _searchCtrl, style: const TextStyle(color: Colors.white, fontSize: 13), decoration: const InputDecoration(hintText: "Search City/Sector...", hintStyle: TextStyle(color: Colors.white54, fontSize: 12), border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 12)), onSubmitted: (_) => _scanning ? null : _runScan()), const Divider(height: 1, color: Colors.white24), TextField(controller: _areaCtrl, style: const TextStyle(color: Colors.white, fontSize: 13), decoration: const InputDecoration(hintText: "Specific Locality/Area...", hintStyle: TextStyle(color: Colors.white54, fontSize: 12), border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 12)), onSubmitted: (_) => _scanning ? null : _runScan())])), IconButton(icon: _scanning ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.cyanAccent)) : const Icon(Icons.search, color: Colors.white, size: 20), onPressed: _scanning ? null : _runScan)]))),
       if (!isMobile) Positioned(top: 20, left: 20, child: Container(decoration: BoxDecoration(color: const Color(0xFF0B1221).withOpacity(0.9), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white24)), child: Column(children: [IconButton(icon: const Icon(Icons.add, color: Colors.white), onPressed: () { setState(() => _currentZoom++); _mapCtrl.move(_loc, _currentZoom); }), Container(height: 1, width: 30, color: Colors.white24), IconButton(icon: const Icon(Icons.remove, color: Colors.white), onPressed: () { setState(() => _currentZoom--); _mapCtrl.move(_loc, _currentZoom); })]))),
+      // Satellite / Street Toggle Button
+      Positioned(top: isMobile ? 70 : 130, left: isMobile ? 15 : 20, child: GestureDetector(
+        onTap: () => setState(() => _isSatellite = !_isSatellite),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0B1221).withOpacity(0.9),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _isSatellite ? Colors.cyanAccent.withOpacity(0.5) : Colors.white24),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(_isSatellite ? Icons.satellite_alt : Icons.map_outlined, color: _isSatellite ? Colors.cyanAccent : Colors.white, size: 18),
+            const SizedBox(width: 6),
+            Text(_isSatellite ? "Satellite" : "Street", style: TextStyle(color: _isSatellite ? Colors.cyanAccent : Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+          ]),
+        ),
+      )),
+      // Bhuvan WMS Toggle
+      Positioned(top: isMobile ? 115 : 185, left: isMobile ? 15 : 20, child: GestureDetector(
+        onTap: () => setState(() => _showBhuvanWms = !_showBhuvanWms),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0B1221).withOpacity(0.9),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _showBhuvanWms ? Colors.orangeAccent.withOpacity(0.5) : Colors.white24),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.layers, color: _showBhuvanWms ? Colors.orangeAccent : Colors.white, size: 18),
+            const SizedBox(width: 6),
+            Text("Bhuvan WMS", style: TextStyle(color: _showBhuvanWms ? Colors.orangeAccent : Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+          ]),
+        ),
+      )),
+      Positioned(bottom: 20, right: 20, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: const Color(0xFF0B1221).withOpacity(0.8), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white24)), child: Row(children: [
+        Icon(Icons.thermostat, color: Colors.orangeAccent, size: 14), const SizedBox(width: 5), Text("${_envData['temp']}°C", style: TextStyle(color: Colors.white, fontSize: 11)), const SizedBox(width: 10), 
+        Icon(Icons.air, color: Colors.lightBlueAccent, size: 14), const SizedBox(width: 5), Text("AQI: ${_envData['aqi']}", style: TextStyle(color: Colors.white, fontSize: 11)), const SizedBox(width: 10), 
+        Icon(Icons.landscape, color: Colors.brown, size: 14), const SizedBox(width: 5), Text("Soil: ${_envData['soil']}", style: TextStyle(color: Colors.white, fontSize: 11)), const SizedBox(width: 10),
+        Icon(Icons.water_drop, color: Colors.blueAccent, size: 14), const SizedBox(width: 5), Text("${_envData['moisture']}%", style: TextStyle(color: Colors.white, fontSize: 11))
+      ]))),
     ]));
   }
 
   Widget _rightPanel(bool isMobile) {
-    return Container(width: isMobile ? double.infinity : 380, decoration: BoxDecoration(color: const Color(0xFF0B1221), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)), padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+    return Container(decoration: BoxDecoration(color: const Color(0xFF0B1221), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)), padding: const EdgeInsets.all(16), child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
       Text(_status, style: TextStyle(color: _status.contains("ERROR") ? Colors.redAccent : (_ready ? Colors.greenAccent : Colors.cyanAccent), fontSize: 12, fontWeight: FontWeight.bold)),
       const SizedBox(height: 20),
       if (!_ready) const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Text("Waiting for target coordinates to initiate analysis workflow...", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 12))))
       else ...[
         const Text("Real-time Stats", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 15),
-        _stat("Total Encroached Area", "$_area m²", Colors.white), _stat("Average Risk Score", "$_risk/100", Colors.redAccent),
-        Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(8)), child: Column(children: [Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_col("EST. VALUE", "₹${(_val/10000000).toStringAsFixed(2)} Cr", Colors.greenAccent), _col("PENALTY", "₹${(_fine/100000).toStringAsFixed(1)} L", Colors.redAccent)]), const Divider(color: Colors.white24, height: 20), Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_col("ECOLOGY (NDVI)", "-$_veg% Cover", Colors.lightGreen), _col("PMAY REHAB", "$_rehab Units", Colors.purpleAccent)])])),
+        _stat("Total Encroached Area", "$_area m²", Colors.white), _stat("Detection Confidence", "$_accuracy%", Colors.cyanAccent),
+        Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(8)), child: Column(children: [Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_col("EST. VALUE", "₹${(_val/10000000).toStringAsFixed(2)} Cr", Colors.greenAccent), _col("PENALTY", "₹${(_fine/100000).toStringAsFixed(1)} L", Colors.redAccent)]), const Divider(color: Colors.white24, height: 20), Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_col("RISK SCORE", "$_risk/100", Colors.orangeAccent), _col("ECOLOGY LOSS", "-$_veg%", Colors.lightGreen)])])),
         const SizedBox(height: 25), Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ const Text("Anomaly Detection", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)), Icon(Icons.more_horiz, color: Colors.white54) ]), const SizedBox(height: 10),
         const SizedBox(height: 10), Text("High-Precision Pixel Differencing: Unauthorized Construction Detected.", style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11)), const SizedBox(height: 25),
         if (widget.isOfficer) ...[
@@ -561,9 +689,9 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         ] else ...[
           const Text("NOTE: Administrative tools disabled for guests.", style: TextStyle(color: Colors.orangeAccent, fontSize: 11, fontStyle: FontStyle.italic))
         ]
-        ]
-      ],
-    ));
+      ]
+    ],
+    )));
   }
 
   Widget _stat(String t, String v, Color c) => Container(margin: const EdgeInsets.only(bottom: 10), width: double.infinity, padding: const EdgeInsets.all(15), decoration: BoxDecoration(color: const Color(0xFF1E293B).withOpacity(0.5), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white10)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(t, style: const TextStyle(color: Colors.white70, fontSize: 12)), const SizedBox(height: 5), Text(v, style: TextStyle(color: c, fontSize: 24, fontWeight: FontWeight.bold))]));
@@ -744,178 +872,196 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   }
 
   void _showBhuPrahari() {
-    showDialog(context: context, builder: (c) => Dialog(
-      backgroundColor: const Color(0xFF0F172A), 
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.white24)),
-      child: Container(
-        width: 1000,
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
-        child: Column(
-          children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  const Icon(Icons.satellite_alt, color: Colors.orangeAccent, size: 30),
-                  const SizedBox(width: 15),
-                  const Text("Bhu-Prahari - Citizen Portal", style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                  IconButton(icon: const Icon(Icons.close, color: Colors.white54), onPressed: () => Navigator.pop(c))
-                ],
-              ),
-            ),
-            Container(height: 1, color: Colors.white10),
-            
-            // 2x2 Grid Content
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Row(
-                  children: [
-                    // Left Column
-                    Expanded(
-                      child: Column(
-                        children: [
-                          // Top Left: Report
-                          Expanded(
-                            child: _bhuCard("Report Suspected Encroachment", 
-                              Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    child: Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(10),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.02),
-                                        border: Border.all(color: Colors.cyanAccent.withOpacity(0.5), width: 1, style: BorderStyle.solid),
-                                        borderRadius: BorderRadius.circular(8)
-                                      ),
-                                      child: SingleChildScrollView(
-                                        child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Icon(Icons.file_upload_outlined, size: 40, color: Colors.cyanAccent.withOpacity(0.7)),
-                                            const SizedBox(height: 10),
-                                            InkWell(
-                                              onTap: () async { 
-                                                FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'png', 'jpg', 'jpeg', 'geojson']);
-                                                if (result != null && context.mounted) {
-                                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("File uploaded: ${result.files.single.name}"), backgroundColor: Colors.green));
-                                                }
-                                              },
-                                              child: RichText(textAlign: TextAlign.center, text: const TextSpan(children: [
-                                                TextSpan(text: "Drag & Drop Photos or PDF Reports Here or ", style: TextStyle(color: Colors.white70)),
-                                                TextSpan(text: "Browse", style: TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
-                                              ])),
-                                            ),
-                                            const SizedBox(height: 5),
-                                            const Text("Help us verify land status.", style: TextStyle(color: Colors.white54, fontSize: 10))
-                                          ]
+    showDialog(context: context, builder: (c) => StatefulBuilder(
+      builder: (context, setDialogState) {
+        String _t(String en, String hi) => _isHindi ? hi : en;
+        return Dialog(
+          backgroundColor: const Color(0xFF0F172A), 
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.white24)),
+          child: Container(
+            width: 1000,
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
+            child: Column(
+              children: [
+                // Header
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.satellite_alt, color: Colors.orangeAccent, size: 30),
+                      const SizedBox(width: 15),
+                      Text(_t("Bhu-Prahari - Citizen Portal", "भू-प्रहरी - नागरिक पोर्टल"), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 20),
+                      Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: Colors.orangeAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.orangeAccent)), child: Row(children: [const Icon(Icons.star, color: Colors.orangeAccent, size: 14), const SizedBox(width: 5), Text(_t("Karma: $_karmaPoints", "कर्म: $_karmaPoints"), style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12))])),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () { 
+                          setState(() => _isHindi = !_isHindi); 
+                          setDialogState((){}); 
+                        }, 
+                        style: TextButton.styleFrom(backgroundColor: Colors.white10),
+                        child: Text(_isHindi ? "A" : "अ", style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold))
+                      ),
+                      const SizedBox(width: 10),
+                      IconButton(icon: const Icon(Icons.close, color: Colors.white54), onPressed: () => Navigator.pop(c))
+                    ],
+                  ),
+                ),
+                Container(height: 1, color: Colors.white10),
+                
+                // 2x2 Grid Content
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Row(
+                      children: [
+                        // Left Column
+                        Expanded(
+                          child: Column(
+                            children: [
+                              // Top Left: Report
+                              Expanded(
+                                child: _bhuCard(_t("Report Suspected Encroachment", "अतिक्रमण की रिपोर्ट करें"), 
+                                  Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Expanded(
+                                        child: Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withOpacity(0.02),
+                                            border: Border.all(color: Colors.cyanAccent.withOpacity(0.5), width: 1, style: BorderStyle.solid),
+                                            borderRadius: BorderRadius.circular(8)
+                                          ),
+                                          child: SingleChildScrollView(
+                                            child: Column(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              children: [
+                                                Icon(Icons.file_upload_outlined, size: 40, color: Colors.cyanAccent.withOpacity(0.7)),
+                                                const SizedBox(height: 10),
+                                                InkWell(
+                                                  onTap: _pickFile,
+                                                  child: RichText(textAlign: TextAlign.center, text: TextSpan(children: [
+                                                    TextSpan(text: _t("Drag & Drop Photos or PDF Reports Here or ", "फोटो या पीडीएफ रिपोर्ट यहां खींचें या "), style: const TextStyle(color: Colors.white70)),
+                                                    TextSpan(text: _t("Browse", "ब्राउज़ करें"), style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
+                                                  ])),
+                                                ),
+                                                const SizedBox(height: 5),
+                                                Text(_t("Help us verify land status.", "भूमि की स्थिति सत्यापित करने में हमारी सहायता करें।"), style: const TextStyle(color: Colors.white54, fontSize: 10))
+                                              ]
+                                            )
+                                          )
                                         )
-                                      )
-                                    )
-                                  ),
-                                  const SizedBox(height: 10),
-                                  const Text("Privacy Note: Your personal information is kept confidential. We only require geo-location data.", style: TextStyle(color: Colors.white30, fontSize: 10))
-                                ]
-                              )
-                            )
-                          ),
-                          const SizedBox(height: 20),
-                          // Bottom Left: Status
-                          Expanded(
-                            child: _bhuCard("Status of Action", 
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text("Submitted complaints to sub-division.", style: TextStyle(color: Colors.white54, fontSize: 12)),
-                                  const SizedBox(height: 15),
-                                  _timelineItem("Oct 25, 2023", "Complaint ID BHU-202310-42 - Action: Field Inspection Scheduled", true),
-                                  _timelineItem("Oct 20, 2023", "Status: Satellite Verification Complete, Awaiting Review", false),
-                                  _timelineItem("Oct 15, 2023", "Action: Case Assigned to Enforcement Team", false, isLast: true),
-                                ]
-                              )
-                            )
-                          ),
-                        ],
-                      )
-                    ),
-                    const SizedBox(width: 20),
-                    // Right Column
-                    Expanded(
-                      child: Column(
-                        children: [
-                          // Top Right: Map
-                          Expanded(
-                            child: _bhuCard("Real-Time Verification Status: Satellite Scan Initiated", 
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Stack(
-                                  children: [
-                                    FlutterMap(options: MapOptions(initialCenter: _loc, initialZoom: 16.0), children: [ 
-                                      TileLayer(urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}')
-                                    ]),
-                                    Center(
-                                      child: Container(
-                                        width: 40, height: 40,
-                                        decoration: BoxDecoration(color: Colors.cyanAccent.withOpacity(0.3), shape: BoxShape.circle),
-                                        child: Center(child: Container(width: 15, height: 15, decoration: const BoxDecoration(color: Colors.cyanAccent, shape: BoxShape.circle))),
                                       ),
-                                    ),
-                                    Positioned(
-                                      bottom: 10, left: 10, right: 10,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(10),
-                                        decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)),
-                                        child: const Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text("ℹ️ Location ID: BHU-202310-45", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                                            Text("Status: Satellite Scan Initiated (Last Update: 2 mins ago)", style: TextStyle(color: Colors.white70, fontSize: 11)),
-                                          ]
-                                        )
-                                      )
-                                    )
-                                  ]
+                                      const SizedBox(height: 10),
+                                      Row(
+                                        children: [
+                                          Switch(value: _isAnonymous, onChanged: (v) => setDialogState(() => _isAnonymous = v), activeColor: Colors.cyanAccent),
+                                          const SizedBox(width: 5),
+                                          Text(_t("Submit Anonymously", "गुमनाम रूप से सबमिट करें"), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                                        ],
+                                      ),
+                                      Text(_t("Privacy Note: Your personal information is kept confidential.", "गोपनीयता नोट: आपकी व्यक्तिगत जानकारी गोपनीय रखी जाती है।"), style: const TextStyle(color: Colors.white30, fontSize: 10))
+                                    ]
+                                  )
                                 )
-                              )
-                            )
-                          ),
-                          const SizedBox(height: 20),
-                          // Bottom Right: Leaderboard
-                          Expanded(
-                            child: _bhuCard("Verified Community Reports", 
-                              Column(
-                                children: [
-                                  _leaderboardItem(1, "Rajesh Kumar", "120 Reports", Colors.greenAccent.withOpacity(0.2)),
-                                  _leaderboardItem(2, "Priya Singh", "95 Reports", Colors.blueAccent.withOpacity(0.2)),
-                                  _leaderboardItem(3, "Vikram Patel", "80 Reports", Colors.white10),
-                                  const Spacer(),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: ElevatedButton(
-                                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E293B), padding: const EdgeInsets.symmetric(vertical: 15)),
-                                      onPressed: (){},
-                                      child: const Text("View Full Leaderboard", style: TextStyle(color: Colors.white70))
+                              ),
+                              const SizedBox(height: 20),
+                              // Bottom Left: Status
+                              Expanded(
+                                child: _bhuCard(_t("Status of Action", "कार्यवाही की स्थिति"), 
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(_t("Submitted complaints to sub-division.", "सब-डिवीजन में जमा की गई शिकायतें।"), style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                      const SizedBox(height: 15),
+                                      _timelineItem(_t("Oct 25, 2023", "25 अक्टूबर, 2023"), _t("Complaint ID BHU-202310-42 - Action: Field Inspection Scheduled", "शिकायत आईडी BHU-202310-42 - कार्यवाही: क्षेत्र निरीक्षण निर्धारित"), true),
+                                      _timelineItem(_t("Oct 20, 2023", "20 अक्टूबर, 2023"), _t("Status: Satellite Verification Complete, Awaiting Review", "स्थिति: उपग्रह सत्यापन पूर्ण, समीक्षा की प्रतीक्षा है"), false),
+                                      _timelineItem(_t("Oct 15, 2023", "15 अक्टूबर, 2023"), _t("Action: Case Assigned to Enforcement Team", "कार्यवाही: प्रवर्तन टीम को सौंपा गया मामला"), false, isLast: true),
+                                    ]
+                                  )
+                                )
+                              ),
+                            ],
+                          )
+                        ),
+                        const SizedBox(width: 20),
+                        // Right Column
+                        Expanded(
+                          child: Column(
+                            children: [
+                              // Top Right: Map
+                              Expanded(
+                                child: _bhuCard(_t("Real-Time Verification Status", "वास्तविक समय सत्यापन स्थिति"), 
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Stack(
+                                      children: [
+                                        FlutterMap(options: MapOptions(initialCenter: _loc, initialZoom: 16.0), children: [ 
+                                          TileLayer(urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}')
+                                        ]),
+                                        Center(
+                                          child: Container(
+                                            width: 40, height: 40,
+                                            decoration: BoxDecoration(color: Colors.cyanAccent.withOpacity(0.3), shape: BoxShape.circle),
+                                            child: Center(child: Container(width: 15, height: 15, decoration: const BoxDecoration(color: Colors.cyanAccent, shape: BoxShape.circle))),
+                                          ),
+                                        ),
+                                        Positioned(
+                                          bottom: 10, left: 10, right: 10,
+                                          child: Container(
+                                            padding: const EdgeInsets.all(10),
+                                            decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(_t("ℹ️ Location ID: BHU-202310-45", "ℹ️ स्थान आईडी: BHU-202310-45"), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                                                Text(_t("Status: Satellite Scan Initiated", "स्थिति: उपग्रह स्कैन शुरू किया गया"), style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                                              ]
+                                            )
+                                          )
+                                        )
+                                      ]
                                     )
                                   )
-                                ]
-                              )
-                            )
-                          ),
-                        ]
-                      )
+                                )
+                              ),
+                              const SizedBox(height: 20),
+                              // Bottom Right: Leaderboard
+                              Expanded(
+                                child: _bhuCard(_t("Verified Community Reports", "सत्यापित सामुदायिक रिपोर्ट"), 
+                                  Column(
+                                    children: [
+                                      _leaderboardItem(1, _t("Rajesh Kumar", "राजेश कुमार"), _t("120 Reports", "120 रिपोर्ट"), Colors.greenAccent.withOpacity(0.2)),
+                                      _leaderboardItem(2, _t("Priya Singh", "प्रिया सिंह"), _t("95 Reports", "95 रिपोर्ट"), Colors.blueAccent.withOpacity(0.2)),
+                                      _leaderboardItem(3, _t("Vikram Patel", "विक्रम पटेल"), _t("80 Reports", "80 रिपोर्ट"), Colors.white10),
+                                      const Spacer(),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: ElevatedButton(
+                                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E293B), padding: const EdgeInsets.symmetric(vertical: 15)),
+                                          onPressed: (){},
+                                          child: Text(_t("View Full Leaderboard", "पूर्ण लीडरबोर्ड देखें"), style: const TextStyle(color: Colors.white70))
+                                        )
+                                      )
+                                    ]
+                                  )
+                                )
+                              ),
+                            ]
+                          )
+                        )
+                      ]
                     )
-                  ]
+                  )
                 )
-              )
+              ]
             )
-          ]
-        )
-      )
+          )
+        );
+      }
     ));
   }
 
@@ -979,70 +1125,75 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     );
   }
 
+  void _showNotificationPanel() {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: "Notifications",
+      pageBuilder: (c, a1, a2) => Align(
+        alignment: Alignment.topRight,
+        child: Container(
+          width: 350,
+          margin: const EdgeInsets.only(top: 60, right: 20),
+          decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 20)]),
+          child: Material(
+            color: Colors.transparent,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(padding: const EdgeInsets.all(15), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text("Critical Alerts", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)), IconButton(icon: const Icon(Icons.close, color: Colors.white54, size: 18), onPressed: () => Navigator.pop(c))])),
+                const Divider(color: Colors.white10, height: 1),
+                if (_tasksList.isEmpty) const Padding(padding: EdgeInsets.all(30), child: Text("No new notifications", style: TextStyle(color: Colors.white30, fontSize: 12)))
+                else ..._tasksList.take(4).map((t) => ListTile(
+                  leading: Icon(Icons.warning_amber, color: t["status"] == "Success" ? Colors.greenAccent : Colors.orangeAccent, size: 20),
+                  title: Text(t["title"]!, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                  subtitle: Text(t["time"]!, style: const TextStyle(color: Colors.white30, fontSize: 11)),
+                )),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showComp() {
     try {
+      bool isSmall = MediaQuery.of(context).size.width < 900;
       showDialog(context: context, builder: (c) => Dialog(
         backgroundColor: const Color(0xFF0B1221), 
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.white10)),
         child: Container(
-          width: 900, 
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
-          padding: const EdgeInsets.all(25),
+          width: isSmall ? MediaQuery.of(context).size.width * 0.95 : 950, 
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+          padding: const EdgeInsets.all(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Expanded(child: Text("Encroachment Analysis", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold))),
+                  const Expanded(child: Text("🛰️ Real-Time Land Comparison", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
                   IconButton(icon: const Icon(Icons.close, color: Colors.white54), onPressed: () => Navigator.pop(c))
                 ],
               ),
-              const SizedBox(height: 20),
+              Container(padding: const EdgeInsets.all(10), margin: const EdgeInsets.only(bottom: 12), decoration: BoxDecoration(color: Colors.amber.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.amber.withOpacity(0.3))), child: Row(children: [
+                const Icon(Icons.info_outline, color: Colors.amber, size: 16),
+                const SizedBox(width: 8),
+                Expanded(child: Text("LEFT: Historical imagery (clean land) | RIGHT: Current imagery with detected encroachments (RED zones)", style: TextStyle(color: Colors.amber.withOpacity(0.8), fontSize: 11))),
+              ])),
               Expanded(
-                child: Row(
-                  children: [
-                    // Left Map
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text("Historical Satellite Imagery (2023)", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 15),
-                          Expanded(
-                            child: Container(
-                              decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white24, width: 1)),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: IgnorePointer(child: FlutterMap(options: MapOptions(initialCenter: _loc, initialZoom: 18.0), children: [ TileLayer(urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}') ]))
-                              )
-                            )
-                          )
-                        ]
-                      )
-                    ),
-                    const SizedBox(width: 15),
-                    // Right Map
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text("Current Satellite Imagery (2024)", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 15),
-                          Expanded(
-                            child: Container(
-                              decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white24, width: 1)),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: IgnorePointer(child: FlutterMap(options: MapOptions(initialCenter: _loc, initialZoom: 18.0), children: [ TileLayer(urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'), PolygonLayer(polygons: _anomalyPolygons) ]))
-                              )
-                            )
-                          )
-                        ]
-                      )
-                    )
-                  ]
-                )
+                child: isSmall
+                  ? SingleChildScrollView(child: Column(children: [
+                      _compMapTile("📅 2021 — Before Construction", 'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/{z}/{y}/{x}', false),
+                      const SizedBox(height: 12),
+                      _compMapTile("📅 2026 — Current (Encroachments Detected)", 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', true),
+                    ]))
+                  : Row(children: [
+                      Expanded(child: _compMapTile("📅 2021 — Before Construction", 'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/{z}/{y}/{x}', false)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _compMapTile("📅 2026 — Current (Encroachments Detected)", 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', true)),
+                    ]),
               )
             ]
           )
@@ -1051,6 +1202,37 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     } catch (e) {
       print("Error showing comparison: $e");
     }
+  }
+
+  Widget _compMapTile(String title, String tileUrl, bool showOverlay) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(color: showOverlay ? Colors.redAccent.withOpacity(0.2) : Colors.green.withOpacity(0.2), borderRadius: const BorderRadius.vertical(top: Radius.circular(8))),
+          child: Row(children: [
+            Icon(showOverlay ? Icons.warning_amber : Icons.check_circle, color: showOverlay ? Colors.redAccent : Colors.greenAccent, size: 16),
+            const SizedBox(width: 6),
+            Text(title, style: TextStyle(color: showOverlay ? Colors.redAccent : Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+          ]),
+        ),
+        SizedBox(
+          height: 300,
+          child: Container(
+            decoration: BoxDecoration(borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)), border: Border.all(color: showOverlay ? Colors.redAccent.withOpacity(0.5) : Colors.greenAccent.withOpacity(0.5))),
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
+              child: FlutterMap(options: MapOptions(initialCenter: _loc, initialZoom: 18.0), children: [
+                TileLayer(urlTemplate: tileUrl),
+                if (showOverlay) PolygonLayer(polygons: _anomalyPolygons),
+                if (showOverlay) PolygonLayer(polygons: _govtPolygons),
+              ]),
+            ),
+          ),
+        ),
+      ],
+    );
   }
   
   Future<void> _makePDF() async { 
@@ -1061,17 +1243,35 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       final pdf = pw.Document(theme: pw.ThemeData.withFont(base: regularFont, bold: boldFont)); 
       pdf.addPage(pw.Page(pageFormat: PdfPageFormat.a4, build: (pw.Context context) { 
         return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [ 
-          pw.Header(level: 0, text: 'GRAVITY OFFICIAL DOSSIER', textStyle: pw.TextStyle(color: PdfColors.blue900, fontSize: 24, fontWeight: pw.FontWeight.bold)), 
+          pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+            pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              pw.Text('GRAVITY OFFICIAL DOSSIER', style: pw.TextStyle(color: PdfColors.blue900, fontSize: 22, fontWeight: pw.FontWeight.bold)),
+              pw.Text('CONFIDENTIAL • GOVT OF INDIA • GEOSPATIAL AUDIT', style: const pw.TextStyle(color: PdfColors.grey700, fontSize: 8)),
+            ]),
+            pw.Container(width: 50, height: 50, child: pw.Text("OFFICIAL SEAL", style: pw.TextStyle(fontSize: 6, color: PdfColors.grey500))),
+          ]),
+          pw.Divider(thickness: 2, color: PdfColors.blue900),
           pw.SizedBox(height: 20), 
           pw.Text('Target Sector: ${_searchCtrl.text.toUpperCase()}', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)), 
-          pw.Text('Coordinates: ${_loc.latitude.toStringAsFixed(4)}, ${_loc.longitude.toStringAsFixed(4)}', style: const pw.TextStyle(fontSize: 14)), 
+          pw.Text('Coordinates: ${_loc.latitude.toStringAsFixed(4)}, ${_loc.longitude.toStringAsFixed(4)}', style: const pw.TextStyle(fontSize: 12)), 
+          pw.SizedBox(height: 20), 
+          pw.Container(padding: const pw.EdgeInsets.all(10), decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.red)), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+            pw.Text('SCAN RESULTS (CONFIDENCE: $_accuracy%)', style: pw.TextStyle(color: PdfColors.red, fontWeight: pw.FontWeight.bold)),
+            pw.Bullet(text: 'Total Area Scanned: 4.5 Sq. Km'),
+            pw.Bullet(text: 'Encroached Area Identified: $_area sq.m'),
+            pw.Bullet(text: 'Environmental Impact: $_veg% vegetation loss'),
+            pw.Bullet(text: 'Estimated Land Value: Cr. ₹${(_val/10000000).toStringAsFixed(2)}'),
+          ])),
           pw.SizedBox(height: 30), 
-          pw.Text('AI ANALYSIS REPORT', style: pw.TextStyle(color: PdfColors.red, fontSize: 16, fontWeight: pw.FontWeight.bold)), 
-          pw.SizedBox(height: 10), 
-          pw.Text('High-risk illegal construction detected inside verified Municipal geo-boundaries.', style: const pw.TextStyle(fontSize: 12, lineSpacing: 2)), 
-          pw.SizedBox(height: 15), 
-          pw.Text('FINANCIAL & ECOLOGICAL IMPACT:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)), 
-          pw.Text('• Encroached Area: $_area Sq. Meters\n• Estimated Value: Rs ${(_val/10000000).toStringAsFixed(2)} Crores\n• Ecology Loss (NDVI): -$_veg% Vegetation\n• PMAY Rehabilitation Need: $_rehab Families', style: const pw.TextStyle(fontSize: 12, lineSpacing: 2))]); 
+          pw.Text('LEGAL NOTICE PREVIEW:', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)), 
+          pw.Padding(padding: const pw.EdgeInsets.all(10), child: pw.Text(_notice, style: pw.TextStyle(fontSize: 10, lineSpacing: 2))), 
+          pw.Spacer(),
+          pw.Divider(),
+          pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+            pw.Text('Digitally Signed by Gravity AI Engine', style: pw.TextStyle(fontSize: 8, fontStyle: pw.FontStyle.italic)),
+            pw.Text('Page 1 of 1', style: pw.TextStyle(fontSize: 8)),
+          ])
+        ]); 
       })); 
       final pdfBytes = await pdf.save();
       await Printing.sharePdf(bytes: pdfBytes, filename: 'Gravity_Dossier.pdf'); 
@@ -1084,4 +1284,182 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   
   Widget _footer() => Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 8), color: const Color(0xFF0B1221), child: const Center(child: Text("Gravity AI - Powered by ISRO Bhuvan - Siam-UNet Neural Networks", style: TextStyle(color: Colors.white54, fontSize: 11))));
   Widget _buildBoot() => Scaffold(backgroundColor: Colors.black, body: Container(width: double.infinity, height: double.infinity, decoration: const BoxDecoration(image: DecorationImage(image: AssetImage(kEarthImg), fit: BoxFit.cover)), child: Align(alignment: Alignment.centerLeft, child: Padding(padding: const EdgeInsets.only(left: 40.0), child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Image.asset("assets/images/logo.png", height: 75), const SizedBox(width: 8), const Text("Gravity AI", style: TextStyle(fontSize: 55, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: -1.0))]), const SizedBox(height: 40), Container(width: 300, height: 4, decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(2)), child: Stack(children: [ AnimatedContainer(duration: const Duration(milliseconds: 250), width: 300 * _bootProgress, height: 4, decoration: const BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.white54, blurRadius: 10)])) ])), const SizedBox(height: 20), const Text("> INITIATING KERNEL...", style: TextStyle(color: Colors.white70, fontFamily: 'monospace', letterSpacing: 1.5, fontSize: 13))])))));
+  void _showChatbot() {
+    setState(() => _showChat = true);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.7,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+              border: Border.all(color: Colors.white24),
+            ),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(15),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.auto_awesome, color: Colors.cyanAccent),
+                      const SizedBox(width: 10),
+                      const Text("Gravity Assistant", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                      const Spacer(),
+                      IconButton(icon: const Icon(Icons.close, color: Colors.white54), onPressed: () => Navigator.pop(context))
+                    ],
+                  ),
+                ),
+                Container(height: 1, color: Colors.white10),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(15),
+                    itemCount: _chatMsgs.length,
+                    itemBuilder: (context, index) {
+                      final msg = _chatMsgs[index];
+                      bool isAi = msg['role'] == 'ai';
+                      return Align(
+                        alignment: isAi ? Alignment.centerLeft : Alignment.centerRight,
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isAi ? const Color(0xFF1E293B) : Colors.cyanAccent.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: isAi ? Colors.white10 : Colors.cyanAccent.withOpacity(0.5))
+                          ),
+                          child: Text(msg['text']!, style: const TextStyle(color: Colors.white)),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(15),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _chatCtrl,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: const InputDecoration(hintText: "Ask Gravity AI...", hintStyle: TextStyle(color: Colors.white54)),
+                          onSubmitted: (val) {
+                            if (val.trim().isEmpty) return;
+                            setModalState(() {
+                              _chatMsgs.add({"role": "user", "text": val});
+                              _chatCtrl.clear();
+                            });
+                            _getGroqResponse(val, setModalState);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      IconButton(
+                        icon: const Icon(Icons.send, color: Colors.cyanAccent),
+                        onPressed: () {
+                           String val = _chatCtrl.text;
+                           if (val.trim().isEmpty) return;
+                            setModalState(() {
+                              _chatMsgs.add({"role": "user", "text": val});
+                              _chatCtrl.clear();
+                            });
+                            _getGroqResponse(val, setModalState);
+                        }
+                      )
+                    ],
+                  ),
+                )
+              ],
+            ),
+          );
+        }
+      ),
+    ).whenComplete(() => setState(() => _showChat = false));
+  }
+
+  Future<void> _getGroqResponse(String userMsg, Function setModalState) async {
+    if (kGroqKey == "YOUR_GROQ_API_KEY_HERE" || kGroqKey.isEmpty) {
+      setModalState(() {
+        _chatMsgs.add({"role": "ai", "text": "Error: Groq API Key not configured. Please add your key in the source code."});
+      });
+      return;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse("https://api.groq.com/openai/v1/chat/completions"),
+        headers: {
+          "Authorization": "Bearer $kGroqKey",
+          "Content-Type": "application/json",
+        },
+        body: jsonEncode({
+          "model": "llama-3.3-70b-versatile",
+          "messages": [
+            {"role": "system", "content": "You are Gravity AI, a geospatial intelligence assistant for ISRO Bhuvan platform. You help urban officers with encroachment detection, land mapping, and administrative tasks. Be professional, concise, and futuristic."},
+            {"role": "user", "content": userMsg}
+          ]
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final aiMsg = data['choices'][0]['message']['content'];
+        setModalState(() {
+          _chatMsgs.add({"role": "ai", "text": aiMsg});
+        });
+      } else {
+        setModalState(() {
+          _chatMsgs.add({"role": "ai", "text": "Error from Groq: ${response.statusCode}"});
+        });
+      }
+    } catch (e) {
+      setModalState(() {
+        _chatMsgs.add({"role": "ai", "text": "Connection Error: $e"});
+      });
+    }
+  }
+
+  Future<void> _pickFile() async {
+    try {
+      FilePickerResult? result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'pdf', 'png'],
+      );
+
+      if (result != null) {
+        String name = result.files.first.name;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Selected: $name"), backgroundColor: Colors.green));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("File Picker Error: $e"), backgroundColor: Colors.red));
+    }
+  }
+}
+
+class BlinkingLight extends StatefulWidget {
+  final Color color;
+  const BlinkingLight({Key? key, required this.color}) : super(key: key);
+  @override
+  _BlinkingLightState createState() => _BlinkingLightState();
+}
+
+class _BlinkingLightState extends State<BlinkingLight> with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat(reverse: true);
+  }
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _ctrl,
+      child: Container(width: 8, height: 8, decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle, boxShadow: [BoxShadow(color: widget.color, blurRadius: 5)])),
+    );
+  }
 }
