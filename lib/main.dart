@@ -11,6 +11,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:geolocator/geolocator.dart';
 import 'dart:js' as js;
 
 // ========================================================
@@ -777,7 +778,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       _status = "📸 OPENING SECURE CAMERA...";
       setState(() {});
 
-      FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.image);
+      FilePickerResult? result = await FilePicker.pickFiles(type: FileType.image);
 
       if (result != null) {
         setState(() {
@@ -978,6 +979,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   }
 
   void _showBhuPrahari() {
+    bool isMobile = MediaQuery.of(context).size.width < 900;
     showDialog(context: context, builder: (c) => StatefulBuilder(
       builder: (context, setDialogState) {
         String _t(String en, String hi) => _isHindi ? hi : en;
@@ -997,7 +999,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                     children: [
                       const Icon(Icons.satellite_alt, color: Colors.orangeAccent, size: 30),
                       const SizedBox(width: 15),
-                      Expanded(child: Text(_t("Bhu-Prahari - Citizen Portal", "भू-प्रहरी - नागरिक पोर्टल"), style: const TextStyle(color: Colors.white, fontSize: isMobile ? 16 : 22, fontWeight: FontWeight.bold))),
+                      Expanded(child: Text(_t("Bhu-Prahari - Citizen Portal", "भू-प्रहरी - नागरिक पोर्टल"), style: TextStyle(color: Colors.white, fontSize: isMobile ? 16 : 22, fontWeight: FontWeight.bold))),
                       const SizedBox(width: 10),
                       TextButton(
                         onPressed: () { 
