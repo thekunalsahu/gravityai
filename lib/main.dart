@@ -792,22 +792,13 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   Widget _topNav(bool isMobile) {
     return Container(height: 60, padding: const EdgeInsets.symmetric(horizontal: 20), decoration: const BoxDecoration(color: Color(0xFF0B1221), border: Border(bottom: BorderSide(color: Colors.white10))), child: Row(children: [
       if (isMobile) IconButton(icon: const Icon(Icons.menu, color: Colors.white), onPressed: () => _scaffoldKey.currentState?.openDrawer()),
-      Image.asset("assets/images/logo.png", height: 35), const SizedBox(width: 8), const Text("Gravity AI", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)), 
+      Image.asset("assets/images/logo.png", height: isMobile ? 25 : 35), const SizedBox(width: 8), Text("Gravity AI", style: TextStyle(color: Colors.white, fontSize: isMobile ? 14 : 18, fontWeight: FontWeight.bold)), 
       if (!isMobile) ...[
         const SizedBox(width: 15), Container(height: 20, width: 2, color: Colors.white24), const SizedBox(width: 15),
         Text(widget.isOfficer ? "Officer Dashboard" : "Public Dashboard", style: const TextStyle(color: Colors.white70, fontSize: 16)),
       ],
       const Spacer(),
       if (!isMobile) ...[
-        // Voice Control Mic (Feature 5)
-        Container(
-          margin: const EdgeInsets.only(right: 15),
-          decoration: BoxDecoration(color: Colors.cyanAccent.withOpacity(0.1), shape: BoxShape.circle),
-          child: IconButton(
-            icon: const Icon(Icons.mic, color: Colors.cyanAccent, size: 20), 
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Voice Command Engine: Waiting for input..."), backgroundColor: Colors.cyan))
-          ).animate(onPlay: (c) => c.repeat()).shimmer(duration: 3.seconds),
-        ),
         if (widget.isOfficer) ...[ const Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [Text("AUTHORIZED OFFICER", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)), Text("SECURE SESSION ACTIVE", style: TextStyle(color: Colors.white54, fontSize: 10))]), const SizedBox(width: 10), const CircleAvatar(backgroundColor: Colors.blueGrey, child: Icon(Icons.person, color: Colors.white)) ]
         else ...[ const Text("GUEST USER", style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 14)) ],
       ],
@@ -922,7 +913,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         Icon(Icons.landscape, color: Colors.brown, size: 14), const SizedBox(width: 5), Text("Soil: ${_envData['soil']}", style: TextStyle(color: Colors.white, fontSize: 11)), const SizedBox(width: 10),
         Icon(Icons.water_drop, color: Colors.blueAccent, size: 14), const SizedBox(width: 5), Text("${_envData['moisture']}%", style: TextStyle(color: Colors.white, fontSize: 11))
       ]))),
-      if (_droneActive) Positioned.fill(child: Container(decoration: BoxDecoration(border: Border.all(color: Colors.cyanAccent.withOpacity(0.3), width: 40)), child: const Center(child: Icon(Icons.center_focus_strong, color: Colors.cyanAccent, size: 100)))),
+      if (_droneActive) Positioned.fill(child: Container(decoration: BoxDecoration(border: Border.all(color: Colors.cyanAccent.withOpacity(0.3), width: isMobile ? 10 : 40)), child: const Center(child: Icon(Icons.center_focus_strong, color: Colors.cyanAccent, size: 100)))),
     ]));
   }
 
@@ -1905,6 +1896,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final aiMsg = data['choices'][0]['message']['content'];
+        _speak(aiMsg); // Fixed: Voice output added to chatbot
         setModalState(() {
           _chatMsgs.add({"role": "ai", "text": aiMsg});
         });
