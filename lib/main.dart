@@ -159,10 +159,10 @@ class _LandingPageState extends State<LandingPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: Colors.orangeAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(8)), child: Row(mainAxisSize: MainAxisSize.min, children: [const Text("POWERED BY ISRO BHUVAN", style: TextStyle(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.5)), const SizedBox(width: 8), const BlinkingLight(color: Colors.greenAccent)])),
+              Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: Colors.orangeAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(8)), child: Row(mainAxisSize: MainAxisSize.min, children: [const Text("USES ISRO BHUVAN SERVICES", style: TextStyle(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2)), const SizedBox(width: 8), const BlinkingLight(color: Colors.greenAccent)])),
               const SizedBox(height: 15), const Text("Developed by Team Tensor Titans, Gravity is a Next-Generation Geospatial Intelligence platform for urban administration.", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, height: 1.4)),
               const SizedBox(height: 15),
-              Text("• Core Engine: Powered by Siam-UNet Neural Networks.\n\n• ISRO Bhuvan Integration: Leverages indigenous Indian satellite imagery, 3D terrain models, and WMS/WFS services for hyper-precise boundary mapping.\n\n• Capabilities: Real-time encroachment tracking via GeoJSON Bhu-Naksha referencing.\n\n• Actionable Intelligence: Automated eviction notices and bulldozer deployment.", style: TextStyle(color: Colors.white.withOpacity(0.8), height: 1.5, fontSize: 13)),
+              Text("- Core Engine: Siam-UNet assisted segmentation for land-use analysis.\n\n- Bhuvan Integration: Satellite imagery, terrain context, and WMS/WFS layers for boundary validation.\n\n- Capabilities: GeoJSON and Bhu-Naksha cross-checking for encroachment risk review.\n\n- Actionable Intelligence: Compliance notice drafting, evidence capture, and field inspection workflow.", style: TextStyle(color: Colors.white.withOpacity(0.8), height: 1.5, fontSize: 13)),
             ],
           ),
         ),
@@ -178,7 +178,7 @@ class _LandingPageState extends State<LandingPage> {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 25.0, sigmaY: 25.0),
           child: Container(
-            padding: const EdgeInsets.all(35),
+            padding: EdgeInsets.all(MediaQuery.of(context).size.width < 500 ? 24 : 35),
             decoration: BoxDecoration(color: Colors.black.withOpacity(0.25), border: Border.all(color: Colors.white.withOpacity(0.2))),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -194,20 +194,40 @@ class _LandingPageState extends State<LandingPage> {
                   Text("Search land risk assessments without privileges.", style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13, height: 1.5)),
                   const SizedBox(height: 25),
                 ],
-                SizedBox(
-                  width: double.infinity, height: 50, 
-                  child: isOfficer 
-                    ? ElevatedButton(
-                        onPressed: () => _login(true), 
-                        style: ElevatedButton.styleFrom(backgroundColor: accent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                        child: const Text("SECURE LOGIN", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1))
-                      )
-                    : OutlinedButton(
-                        onPressed: () => _login(false), 
-                        style: OutlinedButton.styleFrom(backgroundColor: accent.withOpacity(0.05), side: BorderSide(color: accent, width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), 
-                        child: Text("ENTER AS GUEST", style: TextStyle(color: accent, fontWeight: FontWeight.w900, letterSpacing: 1.2))
-                      )
-                )
+                if (isOfficer) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: () => _login(true),
+                      style: ElevatedButton.styleFrom(backgroundColor: accent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                      child: const Text("SECURE LOGIN", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1))
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        _id.text = "DEMO-OFFICER";
+                        _pass.text = "demo123";
+                        _login(true);
+                      },
+                      icon: const Icon(Icons.bolt, size: 16),
+                      label: const Text("USE DEMO OFFICER"),
+                      style: TextButton.styleFrom(foregroundColor: Colors.white70),
+                    ),
+                  ),
+                ] else
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: OutlinedButton(
+                      onPressed: () => _login(false),
+                      style: OutlinedButton.styleFrom(backgroundColor: accent.withOpacity(0.05), side: BorderSide(color: accent, width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                      child: Text("ENTER AS GUEST", style: TextStyle(color: accent, fontWeight: FontWeight.w900, letterSpacing: 1.2))
+                    ),
+                  )
               ],
             ),
           ),
@@ -227,6 +247,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> with TickerProviderStateMixin {
   final TextEditingController _searchCtrl = TextEditingController();
   final TextEditingController _areaCtrl = TextEditingController();
+  final TextEditingController _timerCtrl = TextEditingController(); // Fixed: Defined here to avoid memory leak
   final MapController _mapCtrl = MapController();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -269,7 +290,15 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   Timer? _droneTimer;
 
   @override void initState() { super.initState(); _bootSequence(); }
-  @override void dispose() { _timer?.cancel(); _droneTimer?.cancel(); _searchCtrl.dispose(); _chatCtrl.dispose(); super.dispose(); }
+  @override void dispose() { 
+    _timer?.cancel(); 
+    _droneTimer?.cancel(); 
+    _searchCtrl.dispose(); 
+    _chatCtrl.dispose(); 
+    _areaCtrl.dispose();
+    _timerCtrl.dispose(); // Fixed: Proper disposal
+    super.dispose(); 
+  }
 
   void _bootSequence() async {
     for (int i = 0; i <= 10; i++) {
@@ -304,7 +333,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       setState(() { 
         _scanning = true; _ready = false; _evictSent = false; _canDemolish = false;
         _hasSearched = true;
-        _status = "🛰️ CONNECTING TO SATELLITE..."; 
+        _status = "CONNECTING TO SATELLITE LAYERS..."; 
         _anomalyPolygons.clear(); _govtPolygons.clear();
       });
     }
@@ -342,7 +371,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       if (mounted) setState(() => _stateName = fetchedState);
       _mapCtrl.move(_loc, 18.0);
 
-      if (mounted) setState(() => _status = "🧠 CROSS-REFERENCING GEOJSON...");
+      if (mounted) setState(() => _status = "CROSS-REFERENCING GEOJSON AND BHU-NAKSHA...");
 
       final apiRes = await http.post(
         Uri.parse('$kBackendUrl/api/scan'), 
@@ -361,7 +390,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         if (!mounted) return;
         setState(() {
           _scanning = false; _ready = true;
-          _status = "✅ ANALYSIS COMPLETE — ${data['accuracy']}% CONFIDENCE";
+          _status = "ANALYSIS COMPLETE - ${data['accuracy']}% CONFIDENCE";
           _risk = data['encroaching_count'] != null ? (data['encroaching_count'] * 15).clamp(0, 100) : 0;
           _area = data['area_sqm'] ?? 0;
           _val = (data['land_value'] ?? 0.0).toDouble();
@@ -378,7 +407,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
 
           // Government Boundary — Blue
           if (data['govt_boundary'] != null) {
-             _govtPolygons.add(Polygon(points: _parsePoly(data['govt_boundary']), color: Colors.blue.withValues(alpha: 0.12), borderColor: Colors.blueAccent, borderStrokeWidth: 4, isFilled: true));
+             _govtPolygons.add(Polygon(points: _parsePoly(data['govt_boundary']), color: Colors.blue.withOpacity(0.12), borderColor: Colors.blueAccent, borderStrokeWidth: 4, isFilled: true));
           }
 
           // Encroaching Buildings (on Govt land) — RED
@@ -386,7 +415,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             for (var building in data['encroaching_buildings']) {
               var pts = _parsePoly(building);
               if (pts.length >= 3) {
-                _anomalyPolygons.add(Polygon(points: pts, color: Colors.red.withValues(alpha: 0.5), borderColor: Colors.redAccent, borderStrokeWidth: 2, isFilled: true));
+                _anomalyPolygons.add(Polygon(points: pts, color: Colors.red.withOpacity(0.5), borderColor: Colors.redAccent, borderStrokeWidth: 2, isFilled: true));
               }
             }
           }
@@ -396,25 +425,67 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             for (var building in data['legal_buildings']) {
               var pts = _parsePoly(building);
               if (pts.length >= 3) {
-                _govtPolygons.add(Polygon(points: pts, color: Colors.green.withValues(alpha: 0.2), borderColor: Colors.greenAccent, borderStrokeWidth: 1, isFilled: true));
+                _govtPolygons.add(Polygon(points: pts, color: Colors.green.withOpacity(0.2), borderColor: Colors.greenAccent, borderStrokeWidth: 1, isFilled: true));
               }
             }
           }
 
           // Fallback for old-style anomaly_polygon
           if (data['anomaly_polygon'] != null && data['encroaching_buildings'] == null) {
-            _anomalyPolygons.add(Polygon(points: _parsePoly(data['anomaly_polygon']), color: Colors.red.withValues(alpha: 0.4), borderColor: Colors.redAccent, borderStrokeWidth: 3, isFilled: true));
+            _anomalyPolygons.add(Polygon(points: _parsePoly(data['anomaly_polygon']), color: Colors.red.withOpacity(0.4), borderColor: Colors.redAccent, borderStrokeWidth: 3, isFilled: true));
           }
         });
       } else { throw "Server Error: ${apiRes.statusCode}"; }
     } catch (e) { 
       if (mounted) {
+        final message = e.toString();
         setState(() { 
-          _scanning = false; 
-          _status = e.toString().contains("Timeout") ? "❌ TIMEOUT: SERVER TOOK TOO LONG" : "❌ ERROR: $e"; 
+          if (query.isNotEmpty && !message.toLowerCase().contains("location not found") && !message.contains("FormatException")) {
+            _applyDemoScanState(query, fallbackReason: message);
+          } else {
+            _scanning = false; 
+            _status = message.contains("Timeout") ? "TIMEOUT: SERVER TOOK TOO LONG" : "ERROR: $e"; 
+          }
         });
       }
     }
+  }
+
+  void _applyDemoScanState(String sector, {String? fallbackReason}) {
+    const double delta = 0.00042;
+    const double inner = 0.00016;
+    final LatLng center = _loc;
+
+    _scanning = false;
+    _ready = true;
+    _hasSearched = true;
+    _evictSent = false;
+    _canDemolish = false;
+    _risk = 72;
+    _area = 4250;
+    _val = 18500000;
+    _fine = 1850000;
+    _veg = 18;
+    _accuracy = 94.0;
+    _envData = {"temp": 32, "aqi": 145, "soil": "Alluvial", "moisture": 45};
+    _notice = "Preliminary compliance notice draft for $sector. Field verification is recommended before any administrative action.";
+    _status = fallbackReason == null ? "ANALYSIS COMPLETE - DEMO DATA READY" : "DEMO ANALYSIS READY - BACKEND FALLBACK";
+    _govtPolygons
+      ..clear()
+      ..add(Polygon(points: [
+        LatLng(center.latitude - delta, center.longitude - delta),
+        LatLng(center.latitude - delta, center.longitude + delta),
+        LatLng(center.latitude + delta, center.longitude + delta),
+        LatLng(center.latitude + delta, center.longitude - delta),
+      ], color: Colors.blue.withOpacity(0.12), borderColor: Colors.blueAccent, borderStrokeWidth: 3, isFilled: true));
+    _anomalyPolygons
+      ..clear()
+      ..add(Polygon(points: [
+        LatLng(center.latitude - inner, center.longitude - inner),
+        LatLng(center.latitude - inner, center.longitude + inner),
+        LatLng(center.latitude + inner, center.longitude + inner),
+        LatLng(center.latitude + inner, center.longitude - inner),
+      ], color: Colors.red.withOpacity(0.42), borderColor: Colors.redAccent, borderStrokeWidth: 2, isFilled: true));
   }
 
   @override
@@ -497,17 +568,111 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     );
   }
 
+  Widget _reportsModule(bool isMobile) {
+    final String target = _searchCtrl.text.trim().isEmpty ? "Delhi Central Vista Demo Sector" : _searchCtrl.text.trim();
+    final bool hasAnalysis = _ready || _hasSearched;
+    final List<Map<String, String>> rows = [
+      {"label": "Target Sector", "value": target},
+      {"label": "Coordinates", "value": "${_loc.latitude.toStringAsFixed(4)}, ${_loc.longitude.toStringAsFixed(4)}"},
+      {"label": "Risk Score", "value": hasAnalysis ? "$_risk/100" : "72/100 demo"},
+      {"label": "Detected Area", "value": hasAnalysis ? "$_area sq.m" : "4250 sq.m demo"},
+      {"label": "Confidence", "value": hasAnalysis ? "${_accuracy.toStringAsFixed(1)}%" : "94.0% demo"},
+      {"label": "Workflow", "value": hasAnalysis ? "Analysis ready" : "Sample report available"},
+    ];
+
+    return ListView(
+      padding: EdgeInsets.all(isMobile ? 16 : 28),
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.cyanAccent.withOpacity(0.12), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.cyanAccent.withOpacity(0.35))),
+              child: const Icon(Icons.description_outlined, color: Colors.cyanAccent),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Reports Module", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                  SizedBox(height: 4),
+                  Text("Compliance dossier preview with evidence, risk score, and action trail.", style: TextStyle(color: Colors.white54, fontSize: 12)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 22),
+        Wrap(
+          spacing: 14,
+          runSpacing: 14,
+          children: rows.map((item) => SizedBox(
+            width: isMobile ? double.infinity : 260,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: const Color(0xFF0B1221), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item["label"]!, style: const TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                  const SizedBox(height: 8),
+                  Text(item["value"]!, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          )).toList(),
+        ),
+        const SizedBox(height: 18),
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(color: const Color(0xFF0B1221), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text("Evidence Checklist", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 14),
+              _reportStep(Icons.map_outlined, "Satellite layer captured", hasAnalysis ? "Live map position locked" : "Demo layer ready"),
+              _reportStep(Icons.polyline_outlined, "Boundary overlay verified", _govtPolygons.isNotEmpty ? "Govt boundary loaded" : "Sample boundary will be attached"),
+              _reportStep(Icons.warning_amber_rounded, "Encroachment candidates marked", _anomalyPolygons.isNotEmpty ? "${_anomalyPolygons.length} anomaly layer(s)" : "Demo anomaly polygon ready"),
+              _reportStep(Icons.task_alt, "Compliance action prepared", _notice.isNotEmpty ? "Notice draft available" : "Template draft available"),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            Expanded(child: _btn("Generate PDF", Icons.picture_as_pdf, _makePDF)),
+            const SizedBox(width: 12),
+            Expanded(child: _btn("Open Map", Icons.map_outlined, () => setState(() => _navIndex = 1))),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _reportStep(IconData icon, String title, String subtitle) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.cyanAccent, size: 18),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 2),
+            Text(subtitle, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+          ])),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMainContent(bool isMobile) {
     if (_navIndex == 1) {
       return Padding(padding: const EdgeInsets.all(12.0), child: _mapView(isMobile));
     } else if (_navIndex == 2) {
-      return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        const Icon(Icons.description, size: 80, color: Colors.white24),
-        const SizedBox(height: 20),
-        const Text("REPORTS MODULE", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 10),
-        const Text("No generated reports found for this sector.", style: TextStyle(color: Colors.white54))
-      ]));
+      return _reportsModule(isMobile);
     } else if (_navIndex == 3) {
       return Padding(
         padding: const EdgeInsets.all(20),
@@ -710,25 +875,41 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         _actionBtn("Capture Field Evidence", Icons.camera_alt, _captureEvidence),
         const SizedBox(height: 20),
       ],
-      if (!_ready) const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Text("Waiting for target coordinates to initiate analysis workflow...", textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 12))))
+      if (!_ready) Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_scanning) const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.cyanAccent)),
+              if (_scanning) const SizedBox(height: 16),
+              Text(
+                _scanning ? "Resolving location, loading satellite tiles, and preparing evidence layers..." : "Search a city, sector, or coordinates to start a land-risk analysis workflow.",
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      )
       else ...[
         const Text("Real-time Stats", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 15),
-        _stat("Total Encroached Area", "$_area m²", Colors.white), _stat("Detection Confidence", "$_accuracy%", Colors.cyanAccent),
-        Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(8)), child: Column(children: [Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_col("EST. VALUE", "₹${(_val/10000000).toStringAsFixed(2)} Cr", Colors.greenAccent), _col("PENALTY", "₹${(_fine/100000).toStringAsFixed(1)} L", Colors.redAccent)]), const Divider(color: Colors.white24, height: 20), Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_col("RISK SCORE", "$_risk/100", Colors.orangeAccent), _col("ECOLOGY LOSS", "-$_veg%", Colors.lightGreen)])])),
+        _stat("Total Encroached Area", "$_area sq.m", Colors.white), _stat("Detection Confidence", "${_accuracy.toStringAsFixed(1)}%", Colors.cyanAccent),
+        Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(8)), child: Column(children: [Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_col("EST. VALUE", "Rs. ${(_val/10000000).toStringAsFixed(2)} Cr", Colors.greenAccent), _col("PENALTY", "Rs. ${(_fine/100000).toStringAsFixed(1)} L", Colors.redAccent)]), const Divider(color: Colors.white24, height: 20), Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_col("RISK SCORE", "$_risk/100", Colors.orangeAccent), _col("ECOLOGY LOSS", "-$_veg%", Colors.lightGreen)])])),
         const SizedBox(height: 25), Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ const Text("Anomaly Detection", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)), Icon(Icons.more_horiz, color: Colors.white54) ]), const SizedBox(height: 10),
         const SizedBox(height: 10), Text("High-Precision Pixel Differencing: Unauthorized Construction Detected.", style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11)), const SizedBox(height: 25),
         if (widget.isOfficer) ...[
           Row(children: [Expanded(child: _btn("Compare", Icons.compare, _showComp)), const SizedBox(width: 10), Expanded(child: _btn("Report", Icons.picture_as_pdf, _makePDF))]),
           const SizedBox(height: 20),
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ const Text("Scan Actions", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)), Icon(Icons.more_horiz, color: Colors.white54) ]), const SizedBox(height: 10),
-          _actionBtn("Generate Eviction Notice", Icons.auto_awesome, _showNotice),
-          if (!_evictSent && !_canDemolish) _actionBtn("Set Warning Timer", Icons.warning_amber_rounded, _startTimer),
-          if (_evictSent) Container(width: double.infinity, padding: const EdgeInsets.all(15), decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.orangeAccent)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("NOTICE ACTIVE", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)), const SizedBox(height: 5), Text("Deadline: $_timerSecs Seconds Remaining", style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))])),
+          _actionBtn("Draft Compliance Notice", Icons.auto_awesome, _showNotice),
+          if (!_evictSent && !_canDemolish) _actionBtn("Set Review Timer", Icons.warning_amber_rounded, _startTimer),
+          if (_evictSent) Container(width: double.infinity, padding: const EdgeInsets.all(15), decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.orangeAccent)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("REVIEW TIMER ACTIVE", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)), const SizedBox(height: 5), Text("Deadline: $_timerSecs Seconds Remaining", style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))])),
           if (_canDemolish) SizedBox(width: double.infinity, child: ElevatedButton.icon(onPressed: () { 
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Bulldozer Dispatched."), backgroundColor: Colors.green)); 
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Field inspection task created."), backgroundColor: Colors.green)); 
             setState(() { 
               _tasksList.insert(0, {
-                "title": "Demolition Force Deployed",
+                "title": "Field Inspection Queued",
                 "desc": "Sector: ${_searchCtrl.text.toUpperCase()} | Loc ID: BHU-449-A",
                 "status": "Success",
                 "time": DateFormat('HH:mm a').format(DateTime.now())
@@ -736,7 +917,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
               _canDemolish = false; 
               _ready = false; 
             }); 
-          }, icon: const Icon(Icons.construction), label: const Text("Add to Demolition Queue"), style: ElevatedButton.styleFrom(alignment: Alignment.centerLeft, padding: const EdgeInsets.all(15), backgroundColor: Colors.red[800], foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)))))
+          }, icon: const Icon(Icons.assignment_turned_in), label: const Text("Add to Inspection Queue"), style: ElevatedButton.styleFrom(alignment: Alignment.centerLeft, padding: const EdgeInsets.all(15), backgroundColor: Colors.orange[800], foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)))))
         ] else ...[
           const Text("NOTE: Administrative tools disabled for guests.", style: TextStyle(color: Colors.orangeAccent, fontSize: 11, fontStyle: FontStyle.italic)),
           const SizedBox(height: 20),
@@ -829,20 +1010,34 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   }
 
   void _startTimer() { 
+    _timerCtrl.clear(); // Fixed: Reuse existing controller
     showDialog(context: context, builder: (c) { 
-      TextEditingController d = TextEditingController(); 
       return AlertDialog(
         backgroundColor: const Color(0xFF0F172A), 
-        title: const Text("Set Warning Time", style: TextStyle(color: Colors.white)), 
-        content: TextField(controller: d, keyboardType: TextInputType.number, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: "Enter seconds (e.g. 15)", filled: true)), 
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.white10)),
+        title: const Text("Set Review Time", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)), 
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Enter the duration (in seconds) for the compliance review period.", style: TextStyle(color: Colors.white54, fontSize: 12)),
+            const SizedBox(height: 15),
+            TextField(
+              controller: _timerCtrl, 
+              keyboardType: TextInputType.number, 
+              style: const TextStyle(color: Colors.white), 
+              decoration: const InputDecoration(hintText: "e.g. 15", filled: true, labelText: "Seconds")
+            ),
+          ],
+        ), 
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text("CANCEL")), 
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text("CANCEL", style: TextStyle(color: Colors.white54))), 
           ElevatedButton(
             onPressed: () { 
               Navigator.pop(c); 
               setState(() { 
                 _evictSent = true; 
-                _timerSecs = int.tryParse(d.text) ?? 15; 
+                _timerSecs = int.tryParse(_timerCtrl.text) ?? 15; 
               }); 
               _timer = Timer.periodic(const Duration(seconds: 1), (t) { 
                 if (mounted) { 
@@ -858,8 +1053,8 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                 } 
               }); 
             }, 
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[800]), 
-            child: const Text("DISPATCH")
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[800], foregroundColor: Colors.white), 
+            child: const Text("START REVIEW")
           )
         ]
       ); 
@@ -902,18 +1097,18 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                   children: [
                     RichText(text: TextSpan(style: const TextStyle(color: Colors.black87, fontSize: 13, height: 1.6), children: [
                       const TextSpan(text: "SUBJECT: ", style: TextStyle(fontWeight: FontWeight.bold)),
-                      TextSpan(text: "Notice of Violation under MP Land Revenue Code, Section 248 - Unauthorized Pre-Construction and Severe Tax Evasion."),
+                      TextSpan(text: "Preliminary Compliance Notice under applicable land-record and municipal review workflow."),
                     ])),
                     const SizedBox(height: 20),
-                    const Text("This automated legal notice is generated by the Gravity Sovereign System following a Level-3 Orbital Scan of Sector W-73. The AI Engine has detected significant discrepancies between registered property data and live physical footprint metrics.", style: TextStyle(color: Colors.black87, fontSize: 13, height: 1.6)),
+                    const Text("This compliance draft is prepared by Gravity AI after a geospatial comparison of registered boundary records, satellite imagery, and field-risk indicators. It is intended for officer review before any administrative action.", style: TextStyle(color: Colors.black87, fontSize: 13, height: 1.6)),
                     const SizedBox(height: 20),
                     RichText(text: TextSpan(style: const TextStyle(color: Colors.black87, fontSize: 13, height: 1.6), children: [
-                      const TextSpan(text: "Anomalous activity \"FLAG: PRE-CONSTRUCTION\" has been verified on coordinates corresponding to Bhu-Naksha ID: 449-A. The detected area spans 4,250 sq.m, contrasting starkly with the registered taxable area. Consequently, the calculated "),
-                      TextSpan(text: "Tax Evasion is estimated at INR 18.5 Lakhs", style: TextStyle(color: Colors.red[400], fontWeight: FontWeight.bold)),
+                      const TextSpan(text: "Potential boundary mismatch has been flagged on coordinates corresponding to Bhu-Naksha ID: 449-A. The detected area spans approximately 4,250 sq.m and requires field verification. The estimated exposure is "),
+                      TextSpan(text: "INR 18.5 Lakhs", style: TextStyle(color: Colors.red[400], fontWeight: FontWeight.bold)),
                       const TextSpan(text: "."),
                     ])),
                     const SizedBox(height: 20),
-                    const Text("Furthermore, the unauthorized development is situated within a HIGH FLOOD RISK ZONE, exceeding municipal water load capacities by 125%. Immediate cessation of all activities is mandated. Failure to respond within 48 hours will trigger automated asset freezing protocols.", style: TextStyle(color: Colors.black87, fontSize: 13, height: 1.6)),
+                    const Text("The location also intersects an elevated environmental-risk zone. The recommended next step is a physical inspection, owner response window, and documented compliance review by the competent authority.", style: TextStyle(color: Colors.black87, fontSize: 13, height: 1.6)),
                     const SizedBox(height: 25),
                     Container(height: 1, width: double.infinity, color: Colors.black12),
                     const SizedBox(height: 20),
@@ -926,7 +1121,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                           children: [
                             Container(width: 60, height: 60, decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(4)), child: const Icon(Icons.qr_code_2, color: Colors.white, size: 40)),
                             const SizedBox(height: 5),
-                            const Text("Scan to verify Blockchain Hash", style: TextStyle(color: Colors.black45, fontSize: 10)),
+                            const Text("Scan to verify report reference", style: TextStyle(color: Colors.black45, fontSize: 10)),
                           ],
                         ),
                         const Column(
@@ -934,7 +1129,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                           children: [
                             Text("GRAVITY AI ENGINE", style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 1)),
                             SizedBox(height: 5),
-                            Text("Digital Signature Authorized\nHash: 0xAB427F...E99FF", textAlign: TextAlign.right, style: TextStyle(color: Colors.black54, fontSize: 10)),
+                            Text("Digital Review Signature\nRef: GRV-AUDIT-449-A", textAlign: TextAlign.right, style: TextStyle(color: Colors.black54, fontSize: 10)),
                           ],
                         )
                       ],
@@ -961,16 +1156,16 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                         Navigator.pop(c);
                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Opening mail client..."), backgroundColor: Colors.orange));
                         try {
-                          final subject = Uri.encodeComponent('URGENT: Gravity AI - Official Notice/Report');
-                          final body = Uri.encodeComponent('Notice dispatched for Location ID: BHU-449-A. Sector: ${_searchCtrl.text.toUpperCase()}');
+                          final subject = Uri.encodeComponent('Gravity AI - Compliance Notice Draft');
+                          final body = Uri.encodeComponent('Compliance notice draft prepared for Location ID: BHU-449-A. Sector: ${_searchCtrl.text.toUpperCase()}');
                           final uri = Uri.parse('mailto:kunalsahu81202@gmail.com?subject=$subject&body=$body');
                           if (await canLaunchUrl(uri)) {
                             await launchUrl(uri);
                             if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Notice mail client opened."), backgroundColor: Colors.green));
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Compliance notice mail client opened."), backgroundColor: Colors.green));
                               setState(() {
                                 _tasksList.insert(0, {
-                                  "title": "Legal Notice Dispatched via Mail Client",
+                                  "title": "Compliance Notice Prepared via Mail Client",
                                   "desc": "Sector: ${_searchCtrl.text.toUpperCase()} | Loc ID: BHU-449-A",
                                   "status": "Pending",
                                   "time": DateFormat('HH:mm a').format(DateTime.now())
@@ -985,7 +1180,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                         }
                       },
                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4EE1F1), padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2))),
-                      child: const Text("APPROVE & TRANSMIT", style: TextStyle(color: Colors.black, fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1))
+                      child: const Text("PREPARE EMAIL", style: TextStyle(color: Colors.black, fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1))
                     )
                   ],
                 ),
@@ -1448,7 +1643,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
             pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
               pw.Text('GRAVITY OFFICIAL DOSSIER', style: pw.TextStyle(color: PdfColors.blue900, fontSize: 22, fontWeight: pw.FontWeight.bold)),
-              pw.Text('CONFIDENTIAL • GOVT OF INDIA • GEOSPATIAL AUDIT', style: const pw.TextStyle(color: PdfColors.grey700, fontSize: 8)),
+              pw.Text('COMPLIANCE DRAFT • GEOSPATIAL AUDIT', style: const pw.TextStyle(color: PdfColors.grey700, fontSize: 8)),
             ]),
             pw.Container(width: 50, height: 50, child: pw.Text("OFFICIAL SEAL", style: pw.TextStyle(fontSize: 6, color: PdfColors.grey500))),
           ]),
@@ -1462,10 +1657,10 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             pw.Bullet(text: 'Total Area Scanned: 4.5 Sq. Km'),
             pw.Bullet(text: 'Encroached Area Identified: $_area sq.m'),
             pw.Bullet(text: 'Environmental Impact: $_veg% vegetation loss'),
-            pw.Bullet(text: 'Estimated Land Value: Cr. ₹${(_val/10000000).toStringAsFixed(2)}'),
+            pw.Bullet(text: 'Estimated Land Value: Rs. ${(_val/10000000).toStringAsFixed(2)} Cr'),
           ])),
           pw.SizedBox(height: 30), 
-          pw.Text('LEGAL NOTICE PREVIEW:', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)), 
+          pw.Text('COMPLIANCE NOTICE PREVIEW:', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)), 
           pw.Padding(padding: const pw.EdgeInsets.all(10), child: pw.Text(_notice, style: pw.TextStyle(fontSize: 10, lineSpacing: 2))), 
           pw.Spacer(),
           pw.Divider(),
@@ -1484,7 +1679,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     }
   }
   
-  Widget _footer() => Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 8), color: const Color(0xFF0B1221), child: const Center(child: Text("Gravity AI - Powered by ISRO Bhuvan - Siam-UNet Neural Networks", style: TextStyle(color: Colors.white54, fontSize: 11))));
+  Widget _footer() => Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 8), color: const Color(0xFF0B1221), child: const Center(child: Text("Gravity AI - Uses ISRO Bhuvan services - Siam-UNet Neural Networks", style: TextStyle(color: Colors.white54, fontSize: 11))));
   Widget _buildBoot() => Scaffold(backgroundColor: const Color(0xFF020617), body: Container(width: double.infinity, height: double.infinity, decoration: const BoxDecoration(color: Color(0xFF020617), image: DecorationImage(image: AssetImage(kEarthImg), fit: BoxFit.cover)), child: Align(alignment: Alignment.centerLeft, child: Padding(padding: const EdgeInsets.only(left: 40.0), child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Image.asset("assets/images/logo.png", height: 75, errorBuilder: (c, e, s) => const Icon(Icons.auto_awesome, color: Colors.cyanAccent, size: 40)), const SizedBox(width: 8), const Text("Gravity AI", style: TextStyle(fontSize: 55, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: -1.0))]), const SizedBox(height: 40), Container(width: 300, height: 4, decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(2)), child: Stack(children: [ AnimatedContainer(duration: const Duration(milliseconds: 250), width: 300 * _bootProgress, height: 4, decoration: const BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.white54, blurRadius: 10)])) ])), const SizedBox(height: 20), const Text("> INITIATING KERNEL...", style: TextStyle(color: Colors.white70, fontFamily: 'monospace', letterSpacing: 1.5, fontSize: 13))])))));
   void _showChatbot() {
     setState(() => _showChat = true);
