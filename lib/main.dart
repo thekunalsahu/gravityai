@@ -12,6 +12,7 @@ import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'dart:js' as js;
 
 // ========================================================
@@ -130,14 +131,14 @@ class _LandingPageState extends State<LandingPage> {
                       SizedBox(height: isMobile ? 20 : 30),
                       _buildLoginCard("PUBLIC ACCESS", Icons.public, Colors.greenAccent, false),
                     ],
-                  ),
+                  ).animate().fadeIn(duration: 800.ms).slideX(begin: -0.1, end: 0),
                 ),
               ),
               Positioned(
                 top: MediaQuery.of(context).size.height * 0.22, right: MediaQuery.of(context).size.width * 0.08, 
                 child: SizedBox(
                   width: isMobile ? 0 : 540,
-                  child: isMobile ? const SizedBox() : _buildDetailsCard(),
+                  child: isMobile ? const SizedBox() : _buildDetailsCard().animate().fadeIn(duration: 800.ms).slideX(begin: 0.1, end: 0),
                 ),
               ),
             ],
@@ -794,7 +795,19 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
               height: double.infinity,
               decoration: const BoxDecoration(
                 color: Color(0xFF070B19),
-                image: DecorationImage(image: AssetImage("assets/images/poster.png"), fit: BoxFit.cover),
+                image: DecorationImage(image: AssetImage("assets/images/poster.png"), fit: BoxFit.cover, opacity: 0.6),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.satellite_alt, color: Colors.cyanAccent, size: 80).animate(onPlay: (c) => c.repeat()).shimmer(duration: 2.seconds, color: Colors.white30).shake(),
+                    const SizedBox(height: 20),
+                    const Text("SYSTEM STANDBY", style: TextStyle(color: Colors.cyanAccent, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 4)).animate(onPlay: (c) => c.repeat()).fadeIn(duration: 1.seconds).fadeOut(delay: 1.seconds),
+                    const SizedBox(height: 10),
+                    const Text("WAITING FOR ORBITAL COORDINATES...", style: TextStyle(color: Colors.white30, fontSize: 12, letterSpacing: 1)),
+                  ],
+                ),
               ),
             )
           : FlutterMap(
@@ -893,17 +906,31 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         ),
       )
       else ...[
-        const Text("Real-time Stats", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 15),
-        _stat("Total Encroached Area", "$_area sq.m", Colors.white), _stat("Detection Confidence", "${_accuracy.toStringAsFixed(1)}%", Colors.cyanAccent),
-        Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(8)), child: Column(children: [Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_col("EST. VALUE", "Rs. ${(_val/10000000).toStringAsFixed(2)} Cr", Colors.greenAccent), _col("PENALTY", "Rs. ${(_fine/100000).toStringAsFixed(1)} L", Colors.redAccent)]), const Divider(color: Colors.white24, height: 20), Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_col("RISK SCORE", "$_risk/100", Colors.orangeAccent), _col("ECOLOGY LOSS", "-$_veg%", Colors.lightGreen)])])),
-        const SizedBox(height: 25), Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ const Text("Anomaly Detection", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)), Icon(Icons.more_horiz, color: Colors.white54) ]), const SizedBox(height: 10),
-        const SizedBox(height: 10), Text("High-Precision Pixel Differencing: Unauthorized Construction Detected.", style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11)), const SizedBox(height: 25),
+        const Text("Real-time Stats", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)).animate().fadeIn().slideY(begin: 0.2, end: 0), 
+        const SizedBox(height: 15),
+        _stat("Total Encroached Area", "$_area sq.m", Colors.white).animate().fadeIn(delay: 100.ms).slideY(begin: 0.2, end: 0), 
+        _stat("Detection Confidence", "${_accuracy.toStringAsFixed(1)}%", Colors.cyanAccent).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2, end: 0),
+        Container(
+          padding: const EdgeInsets.all(10), 
+          decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(8)), 
+          child: Column(children: [
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_col("EST. VALUE", "Rs. ${(_val/10000000).toStringAsFixed(2)} Cr", Colors.greenAccent), _col("PENALTY", "Rs. ${(_fine/100000).toStringAsFixed(1)} L", Colors.redAccent)]), 
+            const Divider(color: Colors.white24, height: 20), 
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_col("RISK SCORE", "$_risk/100", Colors.orangeAccent), _col("ECOLOGY LOSS", "-$_veg%", Colors.lightGreen)])
+          ])
+        ).animate().fadeIn(delay: 300.ms).scale(begin: const Offset(0.95, 0.95)),
+        const SizedBox(height: 25), 
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ const Text("Anomaly Detection", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)), Icon(Icons.more_horiz, color: Colors.white54) ]), 
+        const SizedBox(height: 10),
+        Text("High-Precision Pixel Differencing: Unauthorized Construction Detected.", style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11)), 
+        const SizedBox(height: 25),
         if (widget.isOfficer) ...[
-          Row(children: [Expanded(child: _btn("Compare", Icons.compare, _showComp)), const SizedBox(width: 10), Expanded(child: _btn("Report", Icons.picture_as_pdf, _makePDF))]),
+          Row(children: [Expanded(child: _btn("Compare", Icons.compare, _showComp)), const SizedBox(width: 10), Expanded(child: _btn("Report", Icons.picture_as_pdf, _makePDF))]).animate().fadeIn(delay: 400.ms),
           const SizedBox(height: 20),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ const Text("Scan Actions", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)), Icon(Icons.more_horiz, color: Colors.white54) ]), const SizedBox(height: 10),
-          _actionBtn("Draft Compliance Notice", Icons.auto_awesome, _showNotice),
-          if (!_evictSent && !_canDemolish) _actionBtn("Set Review Timer", Icons.warning_amber_rounded, _startTimer),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ const Text("Scan Actions", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)), Icon(Icons.more_horiz, color: Colors.white54) ]), 
+          const SizedBox(height: 10),
+          _actionBtn("Draft Compliance Notice", Icons.auto_awesome, _showNotice).animate().fadeIn(delay: 500.ms),
+          if (!_evictSent && !_canDemolish) _actionBtn("Set Review Timer", Icons.warning_amber_rounded, _startTimer).animate().fadeIn(delay: 600.ms),
           if (_evictSent) Container(width: double.infinity, padding: const EdgeInsets.all(15), decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.orangeAccent)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("REVIEW TIMER ACTIVE", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)), const SizedBox(height: 5), Text("Deadline: $_timerSecs Seconds Remaining", style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))])),
           if (_canDemolish) SizedBox(width: double.infinity, child: ElevatedButton.icon(onPressed: () { 
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Field inspection task created."), backgroundColor: Colors.green)); 
