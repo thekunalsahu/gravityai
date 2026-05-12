@@ -73,17 +73,38 @@ class _LandingPageState extends State<LandingPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF020617), // Match the dark theme
       body: GestureDetector(
         onTap: _showLoginDialog,
-        child: Container(
+        child: SizedBox(
           width: double.infinity,
           height: double.infinity,
-          decoration: const BoxDecoration(
-            image: DecorationImage(
-              image: AssetImage('assets/images/landing_page.png'),
-              fit: BoxFit.cover,
-            ),
+          child: Image.asset(
+            'assets/images/landing_page.png',
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.redAccent, size: 40),
+                    const SizedBox(height: 16),
+                    Text("Error loading image: $error", style: const TextStyle(color: Colors.white70)),
+                    const SizedBox(height: 8),
+                    const Text("Click here to try opening Login anyway", style: TextStyle(color: Colors.blueAccent)),
+                  ],
+                ),
+              );
+            },
+            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+              if (wasSynchronouslyLoaded) return child;
+              return AnimatedOpacity(
+                opacity: frame == null ? 0 : 1,
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeOut,
+                child: child,
+              );
+            },
           ),
         ),
       ),
