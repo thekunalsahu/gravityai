@@ -753,6 +753,41 @@ class _MobileFeature extends StatelessWidget {
   }
 }
 
+class _ForestLegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _ForestLegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B1221).withOpacity(0.82),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+}
+
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -1083,6 +1118,26 @@ class _DashboardScreenState extends State<DashboardScreen>
   final TextEditingController _chatCtrl = TextEditingController();
   bool _isSatellite = true; // Satellite Layer Toggle
   bool _showBhuvanWms = false; // Bhuvan WMS Layer Toggle
+  bool _showForestWatch = false; // Forest monitoring overlay
+  bool _forestScanning = false;
+  bool _forestReady = false;
+  String _forestStatus = "Run an ISRO Bhuvan scan to load live LULC results.";
+  String _forestCurrentClass = "Not scanned";
+  String _forestPreviousClass = "Not scanned";
+  String _forestLayer = "LULC250K_2425";
+  String _forestPreviousLayer = "LULC250K_2324";
+  String _forestSource = "ISRO/NRSC Bhuvan LULC 250K WMS";
+  int _forestRiskScore = 0;
+  int _forestValidSamples = 0;
+  int _forestTotalSamples = 0;
+  int _forestForestSamples = 0;
+  int _forestLostSamples = 0;
+  int _forestBuiltupSamples = 0;
+  double _forestCoverPercent = 0;
+  double _forestLossPercent = 0;
+  double _forestConfidence = 0;
+  List<Map<String, dynamic>> _forestSamplePoints = [];
+  List<String> _forestAlerts = [];
 
   // Geotagged Evidence State
   List<Map<String, dynamic>> _fieldEvidences = [];
@@ -1590,6 +1645,11 @@ class _DashboardScreenState extends State<DashboardScreen>
             setState(() => _navIndex = 2);
             Navigator.pop(context);
           }),
+          _drawerBtn(Icons.forest_rounded, "Forest Watch", _navIndex == 4,
+              tap: () {
+            setState(() => _navIndex = 4);
+            Navigator.pop(context);
+          }),
           if (widget.isOfficer)
             _drawerBtn(Icons.checklist_rtl_rounded, "Tasks", _navIndex == 3,
                 tap: () {
@@ -1873,6 +1933,633 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  Widget _forestWatchModule(bool isMobile) {
+    final String target = _searchCtrl.text.trim().isEmpty
+        ? "Current map location"
+        : _searchCtrl.text.trim();
+    final alerts = _forestAlerts.isEmpty
+        ? [
+            _forestReady
+                ? "No high-risk forest transition detected in sampled Bhuvan cells."
+                : "No scan yet. Run ISRO Bhuvan scan to fetch live LULC classes."
+          ]
+        : _forestAlerts;
+
+    return ListView(
+      padding: EdgeInsets.all(isMobile ? 16 : 28),
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(13),
+              decoration: BoxDecoration(
+                  color: Colors.greenAccent.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(10),
+                  border:
+                      Border.all(color: Colors.greenAccent.withOpacity(0.35))),
+              child: const Icon(Icons.forest_rounded,
+                  color: Colors.greenAccent, size: 28),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Forest Watch",
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold)),
+                  SizedBox(height: 4),
+                  Text(
+                      "Monitor green cover loss, forest buffer violations, fire risk and illegal clearing evidence.",
+                      style: TextStyle(color: Colors.white54, fontSize: 12)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 22),
+        isMobile
+            ? Column(
+                children: [
+                  _forestWatchPreview(isMobile),
+                  const SizedBox(height: 14),
+                  _forestStatusPanel(target),
+                ],
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(flex: 7, child: _forestWatchPreview(isMobile)),
+                  const SizedBox(width: 14),
+                  Expanded(flex: 4, child: _forestStatusPanel(target)),
+                ],
+              ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 14,
+          runSpacing: 14,
+          children: [
+            _forestMetric(
+                "Forest Risk",
+                "$_forestRiskScore/100",
+                _forestRiskScore > 60 ? Colors.redAccent : Colors.orangeAccent,
+                Icons.warning_amber_rounded,
+                isMobile),
+            _forestMetric(
+                "Vegetation Loss",
+                "${_forestLossPercent.toStringAsFixed(1)}%",
+                _forestLostSamples > 0 ? Colors.redAccent : Colors.greenAccent,
+                Icons.energy_savings_leaf_rounded,
+                isMobile),
+            _forestMetric("Built-up Samples", "$_forestBuiltupSamples",
+                Colors.amberAccent, Icons.polyline_rounded, isMobile),
+            _forestMetric(
+                "Bhuvan Confidence",
+                "${_forestConfidence.toStringAsFixed(0)}%",
+                _forestConfidence >= 80 ? Colors.greenAccent : Colors.orange,
+                Icons.verified_rounded,
+                isMobile),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+              color: const Color(0xFF0B1221),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white10)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text("Forest Monitoring Alerts",
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16)),
+              const SizedBox(height: 14),
+              for (final alert in alerts)
+                _forestAlert(
+                    _forestLostSamples > 0
+                        ? Icons.nature_people_rounded
+                        : Icons.info_outline_rounded,
+                    _forestReady ? "Bhuvan Result" : "Awaiting Scan",
+                    alert,
+                    _forestLostSamples > 0
+                        ? Colors.redAccent
+                        : Colors.greenAccent),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            SizedBox(
+              width: isMobile ? double.infinity : 230,
+              child: _btn(
+                  _forestScanning ? "Scanning..." : "Run ISRO Scan",
+                  Icons.satellite_alt_rounded,
+                  _forestScanning ? () {} : _runForestScan),
+            ),
+            SizedBox(
+              width: isMobile ? double.infinity : 240,
+              child: _btn("Open Forest Layer", Icons.map_outlined,
+                  _activateForestWatchLayer),
+            ),
+            if (widget.isOfficer)
+              SizedBox(
+                width: isMobile ? double.infinity : 260,
+                child: _btn("Queue Field Inspection",
+                    Icons.assignment_turned_in_rounded, _queueForestInspection),
+              ),
+            SizedBox(
+              width: isMobile ? double.infinity : 220,
+              child: _btn("Generate Report", Icons.picture_as_pdf, _makePDF),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _forestWatchPreview(bool isMobile) {
+    return Container(
+      height: isMobile ? 310 : 430,
+      decoration: BoxDecoration(
+          color: const Color(0xFF06111F),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.greenAccent.withOpacity(0.22))),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          FlutterMap(
+            options: MapOptions(initialCenter: _loc, initialZoom: 13.5),
+            children: [
+              TileLayer(
+                urlTemplate:
+                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                userAgentPackageName: 'com.gravity.ai',
+              ),
+              if (_forestReady)
+                TileLayer(
+                  wmsOptions: _bhuvanLulcWmsOptions(),
+                  userAgentPackageName: 'com.gravity.ai',
+                ),
+              if (_forestReady) PolygonLayer(polygons: _forestWatchPolygons()),
+              if (_forestReady) MarkerLayer(markers: _forestWatchMarkers()),
+            ],
+          ),
+          if (!_forestReady)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.18),
+                child: Center(
+                  child: Container(
+                    width: isMobile ? 250 : 360,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFF0B1221).withOpacity(0.88),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: Colors.greenAccent.withOpacity(0.25))),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.satellite_alt_rounded,
+                            color: Colors.greenAccent, size: 34),
+                        const SizedBox(height: 10),
+                        const Text("ISRO BHUVAN SCAN REQUIRED",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14)),
+                        const SizedBox(height: 8),
+                        Text(_forestStatus,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: Colors.white60,
+                                fontSize: 11,
+                                height: 1.45)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          Positioned(
+            left: 14,
+            top: 14,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                  color: const Color(0xFF0B1221).withOpacity(0.88),
+                  borderRadius: BorderRadius.circular(8),
+                  border:
+                      Border.all(color: Colors.greenAccent.withOpacity(0.3))),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.forest_rounded,
+                      color: Colors.greenAccent, size: 16),
+                  SizedBox(width: 7),
+                  Text("FOREST WATCH LAYER",
+                      style: TextStyle(
+                          color: Colors.greenAccent,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1)),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 14,
+            bottom: 14,
+            right: 14,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: const [
+                _ForestLegendDot(
+                    color: Colors.greenAccent, label: "Forest Class"),
+                _ForestLegendDot(color: Colors.redAccent, label: "Forest Loss"),
+                _ForestLegendDot(
+                    color: Colors.amberAccent, label: "Built-up Class"),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _forestStatusPanel(String target) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+          color: const Color(0xFF0B1221),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white10)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("Watch Status",
+              style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18)),
+          const SizedBox(height: 14),
+          _forestInfoRow("Target", target),
+          _forestInfoRow("Coordinates",
+              "${_loc.latitude.toStringAsFixed(4)}, ${_loc.longitude.toStringAsFixed(4)}"),
+          _forestInfoRow("Current LULC", _forestCurrentClass),
+          _forestInfoRow("Previous LULC", _forestPreviousClass),
+          _forestInfoRow("Layer", _forestLayer),
+          _forestInfoRow(
+              "Samples", "$_forestValidSamples/$_forestTotalSamples valid"),
+          _forestInfoRow(
+              "Forest Cover", "${_forestCoverPercent.toStringAsFixed(1)}%"),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+                color: Colors.greenAccent.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(8),
+                border:
+                    Border.all(color: Colors.greenAccent.withOpacity(0.22))),
+            child: Text(
+              _forestReady
+                  ? "Live result from $_forestSource. Classes are sampled from Bhuvan LULC WMS GetFeatureInfo around the selected coordinate."
+                  : _forestStatus,
+              style: const TextStyle(
+                  color: Colors.white70, fontSize: 12, height: 1.45),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _forestMetric(
+      String title, String value, Color color, IconData icon, bool isMobile) {
+    return SizedBox(
+      width: isMobile ? double.infinity : 250,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+            color: const Color(0xFF0B1221),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white10)),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 28),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style:
+                          const TextStyle(color: Colors.white54, fontSize: 11)),
+                  const SizedBox(height: 5),
+                  Text(value,
+                      style: TextStyle(
+                          color: color,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _forestAlert(
+      IconData icon, String title, String subtitle, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: color.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: color.withOpacity(0.25))),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13)),
+                const SizedBox(height: 2),
+                Text(subtitle,
+                    style:
+                        const TextStyle(color: Colors.white54, fontSize: 11)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _forestInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(label,
+                style: const TextStyle(
+                    color: Colors.white38,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold)),
+          ),
+          Expanded(
+            child: Text(value,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Polygon> _forestWatchPolygons() {
+    if (!_forestReady) return [];
+    const cell = 0.028;
+    return _forestSamplePoints.map((sample) {
+      final lat = (sample['lat'] as num).toDouble();
+      final lon = (sample['lon'] as num).toDouble();
+      final loss = sample['forest_loss'] == true;
+      final isForest = sample['current_is_forest'] == true;
+      final isBuiltup = sample['current_is_builtup'] == true;
+      final color = loss
+          ? Colors.redAccent
+          : isBuiltup
+              ? Colors.amberAccent
+              : isForest
+                  ? Colors.greenAccent
+                  : Colors.lightBlueAccent;
+      return Polygon(
+          points: [
+            LatLng(lat - cell, lon - cell),
+            LatLng(lat - cell, lon + cell),
+            LatLng(lat + cell, lon + cell),
+            LatLng(lat + cell, lon - cell),
+          ],
+          color: color.withOpacity(loss ? 0.42 : 0.16),
+          borderColor: color,
+          borderStrokeWidth: loss ? 2.5 : 1.4,
+          isFilled: true);
+    }).toList();
+  }
+
+  List<Marker> _forestWatchMarkers() {
+    if (!_forestReady) return [];
+    final markers = <Marker>[];
+    for (final sample in _forestSamplePoints) {
+      final lat = (sample['lat'] as num).toDouble();
+      final lon = (sample['lon'] as num).toDouble();
+      if (sample['forest_loss'] == true) {
+        markers.add(Marker(
+          point: LatLng(lat, lon),
+          width: 170,
+          height: 52,
+          child: _forestMapBadge(Icons.energy_savings_leaf_rounded,
+              "Forest loss", Colors.redAccent),
+        ));
+      } else if (sample['current_is_builtup'] == true &&
+          (_forestForestSamples > 0 ||
+              (sample['previous_is_forest'] == true))) {
+        markers.add(Marker(
+          point: LatLng(lat, lon),
+          width: 170,
+          height: 52,
+          child: _forestMapBadge(
+              Icons.location_city_rounded, "Built-up", Colors.amberAccent),
+        ));
+      }
+    }
+    return markers;
+  }
+
+  Widget _forestMapBadge(IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+      decoration: BoxDecoration(
+          color: const Color(0xFF0B1221).withOpacity(0.88),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withOpacity(0.5))),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 16),
+          const SizedBox(width: 6),
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  WMSTileLayerOptions _bhuvanLulcWmsOptions() {
+    return WMSTileLayerOptions(
+      baseUrl:
+          'https://bhuvan-ras2.nrsc.gov.in/cgi-bin/mapserv.exe?map=/ms4w/apps/mapfiles/LULC250K.map',
+      layers: [_forestLayer],
+      styles: const ['default'],
+      format: 'image/png',
+      version: '1.1.1',
+      transparent: true,
+    );
+  }
+
+  Future<void> _runForestScan() async {
+    if (_forestScanning) return;
+    final sector = _searchCtrl.text.trim().isEmpty
+        ? "Current map location"
+        : _searchCtrl.text.trim();
+    setState(() {
+      _forestScanning = true;
+      _forestReady = false;
+      _forestStatus = "Connecting to ISRO/NRSC Bhuvan LULC WMS...";
+      _forestAlerts = [];
+      _forestSamplePoints = [];
+      _status = "FOREST WATCH: QUERYING BHUVAN LULC";
+    });
+
+    final body = jsonEncode({
+      "lat": _loc.latitude,
+      "lon": _loc.longitude,
+      "sector": sector,
+      "current_layer": _forestLayer,
+      "previous_layer": _forestPreviousLayer,
+    });
+    final endpoints = [
+      '$kBackendUrl/api/forest_scan',
+      'http://127.0.0.1:5000/api/forest_scan',
+      'http://localhost:5000/api/forest_scan',
+    ];
+
+    Object? lastError;
+    for (final endpoint in endpoints) {
+      try {
+        final response = await http
+            .post(Uri.parse(endpoint),
+                headers: {'Content-Type': 'application/json'}, body: body)
+            .timeout(const Duration(seconds: 45));
+        if (response.statusCode != 200) {
+          lastError = "HTTP ${response.statusCode}: ${response.body}";
+          continue;
+        }
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        _applyForestScanResult(data);
+        return;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _forestScanning = false;
+      _forestReady = false;
+      _forestStatus =
+          "Forest scan failed. Start the backend or deploy /api/forest_scan. $lastError";
+      _status = "FOREST WATCH ERROR";
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text("Forest scan failed: $lastError"),
+        backgroundColor: Colors.redAccent));
+  }
+
+  void _applyForestScanResult(Map<String, dynamic> data) {
+    final samples = (data['sample_points'] as List? ?? [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+    if (!mounted) return;
+    setState(() {
+      _forestScanning = false;
+      _forestReady = true;
+      _showForestWatch = true;
+      _hasSearched = true;
+      _forestSource = data['source']?.toString() ?? _forestSource;
+      _forestLayer = data['current_layer']?.toString() ?? _forestLayer;
+      _forestPreviousLayer =
+          data['previous_layer']?.toString() ?? _forestPreviousLayer;
+      _forestCurrentClass = data['current_class']?.toString() ?? "Unknown";
+      _forestPreviousClass = data['previous_class']?.toString() ?? "Unknown";
+      _forestRiskScore = (data['risk_score'] as num? ?? 0).round();
+      _forestValidSamples = (data['valid_samples'] as num? ?? 0).round();
+      _forestTotalSamples = (data['total_samples'] as num? ?? 0).round();
+      _forestForestSamples = (data['forest_samples'] as num? ?? 0).round();
+      _forestLostSamples = (data['lost_samples'] as num? ?? 0).round();
+      _forestBuiltupSamples = (data['builtup_samples'] as num? ?? 0).round();
+      _forestCoverPercent =
+          (data['forest_cover_percent'] as num? ?? 0).toDouble();
+      _forestLossPercent =
+          (data['vegetation_loss_percent'] as num? ?? 0).toDouble();
+      _forestConfidence = (data['confidence'] as num? ?? 0).toDouble();
+      _forestSamplePoints = samples;
+      _forestAlerts = (data['alerts'] as List? ?? [])
+          .map((item) => item.toString())
+          .toList();
+      _forestStatus =
+          "Bhuvan scan complete: $_forestCurrentClass ($_forestLayer)";
+      _status = "FOREST WATCH READY - BHUVAN LULC LIVE";
+    });
+  }
+
+  void _activateForestWatchLayer() {
+    setState(() {
+      _showForestWatch = true;
+      _hasSearched = true;
+      _navIndex = 1;
+      _status = _forestReady
+          ? "FOREST WATCH LAYER ACTIVE"
+          : "RUN ISRO FOREST SCAN FIRST";
+    });
+  }
+
+  void _queueForestInspection() {
+    final target = _searchCtrl.text.trim().isEmpty
+        ? "Current map location"
+        : _searchCtrl.text.trim();
+    setState(() {
+      _tasksList.insert(0, {
+        "title": "Forest Watch Inspection",
+        "desc": "Target: $target | Vegetation loss and buffer breach check",
+        "status": "Pending",
+        "time": DateFormat('HH:mm a').format(DateTime.now())
+      });
+    });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Forest inspection task queued."),
+        backgroundColor: Colors.green));
+  }
+
   Widget _buildMainContent(bool isMobile) {
     if (_navIndex == 1) {
       return Padding(
@@ -1953,6 +2640,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                               ]));
                         }))
           ]));
+    } else if (_navIndex == 4) {
+      return _forestWatchModule(isMobile);
     }
 
     if (isMobile) {
@@ -2006,6 +2695,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                   tap: () => setState(() => _navIndex = 1)),
               _sideBtn(Icons.description_outlined, "Reports", _navIndex == 2,
                   tap: () => setState(() => _navIndex = 2)),
+              _sideBtn(Icons.forest_rounded, "Forest", _navIndex == 4,
+                  tap: () => setState(() => _navIndex = 4)),
               if (widget.isOfficer)
                 _sideBtn(Icons.checklist_rtl_rounded, "Tasks", _navIndex == 3,
                     tap: () => setState(() => _navIndex = 3)),
@@ -2264,8 +2955,17 @@ class _DashboardScreenState extends State<DashboardScreen>
                               'https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=lulc:ap_lulc_50k_1516&STYLE=default&TILEMATRIXSET=EPSG:900913&TILEMATRIX=EPSG:900913:{z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png',
                           userAgentPackageName: 'com.gravity.ai',
                         ),
+                      if (_showForestWatch && _forestReady)
+                        TileLayer(
+                          wmsOptions: _bhuvanLulcWmsOptions(),
+                          userAgentPackageName: 'com.gravity.ai',
+                        ),
                       PolygonLayer(polygons: _govtPolygons),
                       PolygonLayer(polygons: _anomalyPolygons),
+                      if (_showForestWatch) ...[
+                        PolygonLayer(polygons: _forestWatchPolygons()),
+                        MarkerLayer(markers: _forestWatchMarkers()),
+                      ],
                       if (_droneActive && _dronePos != null)
                         MarkerLayer(markers: [
                           Marker(
@@ -2435,6 +3135,41 @@ class _DashboardScreenState extends State<DashboardScreen>
                           style: TextStyle(
                               color: _showTimeline
                                   ? Colors.purpleAccent
+                                  : Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold)),
+                    ]),
+                  ),
+                )),
+          // Forest Watch Overlay Toggle
+          if (_hasSearched)
+            Positioned(
+                top: isMobile ? 205 : 295,
+                left: isMobile ? 15 : 20,
+                child: GestureDetector(
+                  onTap: () =>
+                      setState(() => _showForestWatch = !_showForestWatch),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0B1221).withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: _showForestWatch
+                              ? Colors.greenAccent.withOpacity(0.55)
+                              : Colors.white24),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.forest_rounded,
+                          color: _showForestWatch
+                              ? Colors.greenAccent
+                              : Colors.white,
+                          size: 18),
+                      const SizedBox(width: 6),
+                      Text("Forest Watch",
+                          style: TextStyle(
+                              color: _showForestWatch
+                                  ? Colors.greenAccent
                                   : Colors.white,
                               fontSize: 11,
                               fontWeight: FontWeight.bold)),
