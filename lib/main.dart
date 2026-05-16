@@ -269,13 +269,10 @@ class _LandingPageState extends State<LandingPage> {
                     primary: false,
                     fullWidth: true),
                 const SizedBox(height: 24),
-                Wrap(
+                const Wrap(
                   spacing: 10,
                   runSpacing: 10,
-                  children: const [
-                    _MobileFeature(
-                        icon: Icons.my_location_rounded,
-                        label: "High Accuracy"),
+                  children: [
                     _MobileFeature(
                         icon: Icons.radar_rounded,
                         label: "Real-time Monitoring"),
@@ -1132,7 +1129,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   int _forestTotalSamples = 0;
   int _forestForestSamples = 0;
   int _forestLostSamples = 0;
-  int _forestBuiltupSamples = 0;
   double _forestCoverPercent = 0;
   double _forestLossPercent = 0;
   double _forestConfidence = 0;
@@ -2013,8 +2009,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                 _forestLostSamples > 0 ? Colors.redAccent : Colors.greenAccent,
                 Icons.energy_savings_leaf_rounded,
                 isMobile),
-            _forestMetric("Built-up Samples", "$_forestBuiltupSamples",
-                Colors.amberAccent, Icons.polyline_rounded, isMobile),
+            _forestMetric("Forest Samples", "$_forestForestSamples",
+                Colors.greenAccent, Icons.forest_rounded, isMobile),
             _forestMetric(
                 "Bhuvan Confidence",
                 "${_forestConfidence.toStringAsFixed(0)}%",
@@ -2188,7 +2184,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     color: Colors.greenAccent, label: "Forest Class"),
                 _ForestLegendDot(color: Colors.redAccent, label: "Forest Loss"),
                 _ForestLegendDot(
-                    color: Colors.amberAccent, label: "Built-up Class"),
+                    color: Colors.lightBlueAccent, label: "Other LULC"),
               ],
             ),
           ),
@@ -2350,14 +2346,11 @@ class _DashboardScreenState extends State<DashboardScreen>
       final lon = (sample['lon'] as num).toDouble();
       final loss = sample['forest_loss'] == true;
       final isForest = sample['current_is_forest'] == true;
-      final isBuiltup = sample['current_is_builtup'] == true;
       final color = loss
           ? Colors.redAccent
-          : isBuiltup
-              ? Colors.amberAccent
-              : isForest
-                  ? Colors.greenAccent
-                  : Colors.lightBlueAccent;
+          : isForest
+              ? Colors.greenAccent
+              : Colors.lightBlueAccent;
       return Polygon(
           points: [
             LatLng(lat - cell, lon - cell),
@@ -2385,16 +2378,6 @@ class _DashboardScreenState extends State<DashboardScreen>
           height: 52,
           child: _forestMapBadge(Icons.energy_savings_leaf_rounded,
               "Forest loss", Colors.redAccent),
-        ));
-      } else if (sample['current_is_builtup'] == true &&
-          (_forestForestSamples > 0 ||
-              (sample['previous_is_forest'] == true))) {
-        markers.add(Marker(
-          point: LatLng(lat, lon),
-          width: 170,
-          height: 52,
-          child: _forestMapBadge(
-              Icons.location_city_rounded, "Built-up", Colors.amberAccent),
         ));
       }
     }
@@ -2516,7 +2499,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       _forestTotalSamples = (data['total_samples'] as num? ?? 0).round();
       _forestForestSamples = (data['forest_samples'] as num? ?? 0).round();
       _forestLostSamples = (data['lost_samples'] as num? ?? 0).round();
-      _forestBuiltupSamples = (data['builtup_samples'] as num? ?? 0).round();
       _forestCoverPercent =
           (data['forest_cover_percent'] as num? ?? 0).toDouble();
       _forestLossPercent =

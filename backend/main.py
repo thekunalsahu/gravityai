@@ -211,6 +211,13 @@ FOREST_KEYWORDS = (
     "littoral",
     "swamp",
     "plantation",
+    "tree clad",
+    "treeclad",
+    "deciduous",
+    "evergreen",
+    "semi evergreen",
+    "coniferous",
+    "bamboo",
 )
 
 BUILTUP_KEYWORDS = ("built", "urban", "settlement", "industrial")
@@ -258,7 +265,7 @@ def _fetch_bhuvan_lulc_class(lat: float, lon: float, layer: str) -> str:
 
 
 def _is_forest_lulc(lulc_class: str) -> bool:
-    lower = (lulc_class or "").lower()
+    lower = re.sub(r"[\s_/-]+", " ", (lulc_class or "").lower())
     return any(keyword in lower for keyword in FOREST_KEYWORDS)
 
 
@@ -335,7 +342,6 @@ async def forest_scan(request: ForestScanRequest):
         1 for s in valid_samples if s["previous_is_forest"]
     )
     lost_samples = sum(1 for s in valid_samples if s["forest_loss"])
-    builtup_samples = sum(1 for s in valid_samples if s["current_is_builtup"])
     center_sample = min(
         sample_results,
         key=lambda s: abs(s["lat"] - request.lat) + abs(s["lon"] - request.lon),
@@ -351,27 +357,24 @@ async def forest_scan(request: ForestScanRequest):
     vegetation_loss_percent = round(
         (lost_samples / max(previous_forest_samples, 1)) * 100, 1
     )
-    near_forest_builtup = builtup_samples > 0 and (
-        forest_samples > 0 or previous_forest_samples > 0
-    )
+    has_forest_context = forest_samples > 0 or previous_forest_samples > 0
     risk_score = min(
         100,
         int(
-            vegetation_loss_percent * 0.9
-            + (builtup_samples * 8 if near_forest_builtup else 0)
-            + (18 if near_forest_builtup else 0)
+            (vegetation_loss_percent * 0.9 if has_forest_context else 0)
             + (12 if center_sample["forest_loss"] else 0)
+            + (lost_samples * 6 if has_forest_context else 0)
         ),
     )
 
     alerts = []
+    if not has_forest_context:
+        alerts.append(
+            "No forest-class samples were found around the selected point. Search or move the map to a forest area for a meaningful Forest Watch scan."
+        )
     if lost_samples:
         alerts.append(
             f"{lost_samples} sampled cell(s) changed from forest-type cover to another LULC class."
-        )
-    if near_forest_builtup:
-        alerts.append(
-            f"{builtup_samples} built-up sampled cell(s) found near current/previous forest cover."
         )
     if center_sample["current_is_forest"]:
         alerts.append(
@@ -381,9 +384,9 @@ async def forest_scan(request: ForestScanRequest):
         alerts.append(
             f"Selected point was forest-type in {previous_layer} and is now {center_sample['current_class']}."
         )
-    else:
+    elif has_forest_context:
         alerts.append(
-            f"Selected point is currently classified as {center_sample['current_class']}."
+            "Selected point is not forest-class, but nearby samples include current or previous forest cover."
         )
     if errors:
         alerts.append(
@@ -407,9 +410,9 @@ async def forest_scan(request: ForestScanRequest):
         "forest_samples": forest_samples,
         "previous_forest_samples": previous_forest_samples,
         "lost_samples": lost_samples,
-        "builtup_samples": builtup_samples,
+        "builtup_samples": 0,
         "confidence": round((len(valid_samples) / len(grid)) * 100, 1),
-        "near_forest_builtup": near_forest_builtup,
+        "near_forest_builtup": False,
         "sample_points": sample_results,
         "alerts": alerts,
         "errors": errors,

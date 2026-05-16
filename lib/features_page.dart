@@ -77,11 +77,6 @@ class FeaturesPage extends StatelessWidget {
       title: 'Easy Integration',
       description: 'Seamlessly integrate with existing systems and workflows.',
     ),
-    _FeatureItem(
-      icon: Icons.support_agent_rounded,
-      title: '24/7 Support',
-      description: 'Our support team is always available to assist you.',
-    ),
   ];
 
   static const List<_AudienceItem> _audiences = [
@@ -293,16 +288,10 @@ class _FeatureMetrics extends StatelessWidget {
   Widget build(BuildContext context) {
     final cards = [
       const _MetricCard(
-        icon: Icons.gps_fixed_rounded,
-        title: 'High Accuracy',
-        value: '98.7%',
-        detail: 'AI-driven precision\nyou can trust.',
-      ),
-      const _MetricCard(
         icon: Icons.speed_rounded,
         title: 'Real-time Alerts',
-        value: '24/7',
-        detail: 'Always monitoring.\nAlways protecting.',
+        value: 'Live',
+        detail: 'Active scan alerts\nand field updates.',
       ),
     ];
 
@@ -324,8 +313,6 @@ class _FeatureMetrics extends StatelessWidget {
         child: Row(
           children: [
             Expanded(child: cards[0]),
-            const SizedBox(width: 14),
-            Expanded(child: cards[1]),
           ],
         ),
       ),
