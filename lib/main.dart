@@ -24,7 +24,6 @@ import 'features_page.dart';
 const String kBackendUrl = "https://gravityai-backend.onrender.com";
 const String kEarthImg = "assets/images/background.png";
 const String kLandingReferenceImg = "assets/images/landing_reference.png";
-const String kSatelliteCutoutImg = "assets/images/satellite_cutout.png";
 const String kGroqKey =
     String.fromEnvironment('GROQ_API_KEY', defaultValue: '');
 
@@ -148,16 +147,6 @@ class _LandingPageState extends State<LandingPage> {
               ),
             ),
             Positioned(
-              top: 0,
-              left: 0,
-              width: pageWidth,
-              height: imageHeight,
-              child: IgnorePointer(
-                  child: _ReferenceSatelliteScanLayer(
-                      scale: (pageWidth / 1536).clamp(0.74, 1.22),
-                      isMobile: false)),
-            ),
-            Positioned(
               left: pageWidth * 0.044,
               top: imageHeight * 0.475,
               width: pageWidth * 0.139,
@@ -225,10 +214,6 @@ class _LandingPageState extends State<LandingPage> {
             ),
           ),
         ),
-        const Positioned.fill(
-            child: IgnorePointer(
-                child:
-                    _ReferenceSatelliteScanLayer(scale: 0.72, isMobile: true))),
         SafeArea(
           child: SingleChildScrollView(
             controller: _scrollController,
@@ -662,95 +647,6 @@ class _AIPillPulseState extends State<_AIPillPulse>
                   spreadRadius: value * 3),
             ],
           ),
-        );
-      },
-    );
-  }
-}
-
-class _ReferenceSatelliteScanLayer extends StatefulWidget {
-  final double scale;
-  final bool isMobile;
-
-  const _ReferenceSatelliteScanLayer(
-      {required this.scale, required this.isMobile});
-
-  @override
-  State<_ReferenceSatelliteScanLayer> createState() =>
-      _ReferenceSatelliteScanLayerState();
-}
-
-class _ReferenceSatelliteScanLayerState
-    extends State<_ReferenceSatelliteScanLayer>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller =
-        AnimationController(vsync: this, duration: const Duration(seconds: 11))
-          ..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            final t = _controller.value * math.pi * 2;
-            double clampToView(double value, double min, double max) =>
-                value.clamp(min, math.max(min, max)).toDouble();
-
-            final drift =
-                math.sin(t) * (widget.isMobile ? 6 : 8) * widget.scale;
-            final satelliteWidth = math.min(
-                (widget.isMobile ? 176.0 : 316.0) * widget.scale,
-                constraints.maxWidth * (widget.isMobile ? 0.40 : 0.27));
-            final satelliteHeight = satelliteWidth * 180 / 330;
-            final rawLeft = widget.isMobile
-                ? constraints.maxWidth * 0.565
-                : constraints.maxWidth * 0.585;
-            final rawTop = widget.isMobile
-                ? constraints.maxHeight * 0.078
-                : constraints.maxHeight * 0.010;
-            final baseLeft = clampToView(
-                rawLeft, 14, constraints.maxWidth - satelliteWidth - 18);
-            final baseTop = clampToView(
-                rawTop, 10, constraints.maxHeight - satelliteHeight - 18);
-            final satelliteLeft = clampToView(baseLeft + drift, 14,
-                constraints.maxWidth - satelliteWidth - 18);
-            final satelliteTop = clampToView(
-                baseTop + math.cos(t * 0.85) * 4 * widget.scale,
-                10,
-                constraints.maxHeight - satelliteHeight - 18);
-            return Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // Satellite image without rings, dots, or beams
-                Positioned(
-                  left: satelliteLeft,
-                  top: satelliteTop,
-                  width: satelliteWidth,
-                  height: satelliteHeight,
-                  child: Image.asset(kSatelliteCutoutImg,
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.high,
-                      errorBuilder: (context, error, stackTrace) =>
-                          const SizedBox.shrink()),
-                ),
-                // Green pulse rings and center dot removed per user request
-              ],
-            );
-          },
         );
       },
     );
