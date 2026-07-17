@@ -541,26 +541,6 @@ def _is_inside_boundary(point_lat, point_lon, boundary_lat, boundary_lon, offset
             boundary_lon - offset <= point_lon <= boundary_lon + offset)
 
 
-def _point_in_polygon(lat: float, lon: float, polygon: list[dict]) -> bool:
-    """Ray-casting point-in-polygon check for lat/lon dictionaries."""
-    if len(polygon) < 3:
-        return False
-    inside = False
-    j = len(polygon) - 1
-    for i, point in enumerate(polygon):
-        yi = float(point["lat"])
-        xi = float(point["lon"])
-        yj = float(polygon[j]["lat"])
-        xj = float(polygon[j]["lon"])
-        intersects = ((yi > lat) != (yj > lat)) and (
-            lon < (xj - xi) * (lat - yi) / ((yj - yi) or 1e-12) + xi
-        )
-        if intersects:
-            inside = not inside
-        j = i
-    return inside
-
-
 def _polygon_area_sqm(coords: list) -> float:
     """Approximate small building footprint area in square meters."""
     if len(coords) < 3:
@@ -580,8 +560,6 @@ CITY_LAND_PROFILES = {
     "mhow": {
         "city": "Mhow",
         "state": "Madhya Pradesh",
-        "boundary_query": "Dr Ambedkar Nagar Mhow, Madhya Pradesh, India",
-        "scan_radius_m": 5500,
         "rate_per_sqm": 28000,
         "rate_basis": "Indicative city baseline; verify exact ward/village in MPIGR SAMPADA.",
         "source": "MP Registration & Stamps SAMPADA guideline valuation",
@@ -590,8 +568,6 @@ CITY_LAND_PROFILES = {
     "indore": {
         "city": "Indore",
         "state": "Madhya Pradesh",
-        "boundary_query": "Indore, Madhya Pradesh, India",
-        "scan_radius_m": 8500,
         "rate_per_sqm": 52000,
         "rate_basis": "Indicative city baseline; Indore guideline rates vary by ward/colony.",
         "source": "MP Registration & Stamps SAMPADA guideline valuation",
@@ -600,8 +576,6 @@ CITY_LAND_PROFILES = {
     "bhopal": {
         "city": "Bhopal",
         "state": "Madhya Pradesh",
-        "boundary_query": "Bhopal, Madhya Pradesh, India",
-        "scan_radius_m": 6500,
         "rate_per_sqm": 42000,
         "rate_basis": "Indicative city baseline; Bhopal guideline rates vary by ward/colony.",
         "source": "MP Registration & Stamps SAMPADA guideline valuation",
@@ -610,8 +584,6 @@ CITY_LAND_PROFILES = {
     "delhi": {
         "city": "Delhi",
         "state": "Delhi",
-        "boundary_query": "Delhi, India",
-        "scan_radius_m": 6500,
         "rate_per_sqm": 246000,
         "rate_basis": "Indicative Category B/C urban baseline; exact colony category changes the rate.",
         "source": "Delhi Revenue Department circle-rate notifications",
@@ -620,8 +592,6 @@ CITY_LAND_PROFILES = {
     "mumbai": {
         "city": "Mumbai",
         "state": "Maharashtra",
-        "boundary_query": "Mumbai, Maharashtra, India",
-        "scan_radius_m": 6500,
         "rate_per_sqm": 250000,
         "rate_basis": "Indicative Mumbai ASR baseline; exact division/zone changes the rate.",
         "source": "Maharashtra IGR Annual Statement of Rates/eASR",
@@ -638,99 +608,11 @@ def _city_land_profile(sector: str) -> dict:
     return {
         "city": sector or "Selected location",
         "state": "India",
-        "boundary_query": f"{sector}, India" if sector else "India",
-        "scan_radius_m": 1200,
         "rate_per_sqm": 25000,
         "rate_basis": "Fallback baseline because this city is not in the configured official-rate set.",
         "source": "Fallback estimate; verify exact guideline/circle/ASR rate on the state portal.",
         "source_url": "",
     }
-
-
-def _city_scan_radius_m(sector: str) -> int:
-    profile = _city_land_profile(sector)
-    return int(profile.get("scan_radius_m", 1200))
-
-
-def _downsample_boundary(points: list[dict], max_points: int = 420) -> list[dict]:
-    if len(points) <= max_points:
-        return points
-    step = max(1, math.ceil(len(points) / max_points))
-    sampled = points[::step]
-    if sampled[-1] != points[-1]:
-        sampled.append(points[-1])
-    return sampled
-
-
-def _radius_boundary(lat: float, lon: float, radius_m: int, points: int = 72) -> list[dict]:
-    lat_delta = radius_m / 111_320
-    lon_delta = radius_m / (111_320 * math.cos(math.radians(lat)) or 1)
-    return [
-        {
-            "lat": lat + math.sin((2 * math.pi * index) / points) * lat_delta,
-            "lon": lon + math.cos((2 * math.pi * index) / points) * lon_delta,
-        }
-        for index in range(points)
-    ]
-
-
-def _largest_geojson_ring(geojson: dict) -> list:
-    if not geojson:
-        return []
-    geometry_type = geojson.get("type")
-    coordinates = geojson.get("coordinates", [])
-    rings = []
-    if geometry_type == "Polygon":
-        rings = coordinates[:1]
-    elif geometry_type == "MultiPolygon":
-        rings = [polygon[0] for polygon in coordinates if polygon]
-    if not rings:
-        return []
-    return max(rings, key=len)
-
-
-def _fetch_city_boundary(sector: str) -> list[dict]:
-    """Fetch an OSM/Nominatim city boundary polygon for the searched city."""
-    profile = _city_land_profile(sector)
-    query = profile.get("boundary_query") or f"{sector}, India"
-    try:
-        response = req.get(
-            "https://nominatim.openstreetmap.org/search",
-            params={
-                "q": query,
-                "format": "json",
-                "limit": 5,
-                "polygon_geojson": 1,
-                "addressdetails": 1,
-            },
-            headers={"User-Agent": "Gravity-Titans/1.0"},
-            timeout=16,
-        )
-        response.raise_for_status()
-        results = response.json()
-        for result in results:
-            result_class = (result.get("class") or "").lower()
-            result_type = (result.get("type") or "").lower()
-            osm_type = (result.get("osm_type") or "").lower()
-            is_boundary_result = (
-                result_class in {"boundary", "place"}
-                or result_type in {"administrative", "city", "town", "municipality"}
-                or osm_type == "relation"
-            )
-            if not is_boundary_result:
-                continue
-            ring = _largest_geojson_ring(result.get("geojson", {}))
-            boundary = [
-                {"lat": float(lat), "lon": float(lon)}
-                for lon, lat in ring
-                if lat is not None and lon is not None
-            ]
-            if len(boundary) >= 3:
-                return _downsample_boundary(boundary)
-    except Exception as exc:
-        logger.warning(f"City boundary fetch failed for {query}: {exc}")
-    return []
-
 
 def _estimate_land_rate_per_sqm(sector: str, govt_assets_count: int) -> int:
     """Use configured official-rate baselines with a small infrastructure modifier."""
@@ -1195,8 +1077,7 @@ async def trigger_scan(request: ScanRequest):
     city = request.sector or "Bhopal"
     
     try:
-        land_profile = _city_land_profile(city)
-        analysis_radius_m = _city_scan_radius_m(city)
+        analysis_radius_m = 1200
 
         # STEP 1: Fetch REAL buildings from OSM across a larger audit area.
         buildings_raw = _fetch_osm_buildings(lat, lon, radius=analysis_radius_m)
@@ -1206,13 +1087,17 @@ async def trigger_scan(request: ScanRequest):
         
         # STEP 3: Get Environmental Data from Groq
         env_data = _get_groq_env_data(city)
+        land_profile = _city_land_profile(city)
         
         # STEP 4: Define a large audit zone around the searched point. Prediction
         # uses a spatial index over protected assets and building centroids.
-        gov_offset = max(0.0108, analysis_radius_m / 111_320)
-        city_boundary = _fetch_city_boundary(city)
-        radius_boundary = _radius_boundary(lat, lon, analysis_radius_m)
-        govt_boundary = city_boundary or radius_boundary
+        gov_offset = 0.0108
+        govt_boundary = [
+            {"lat": lat + gov_offset, "lon": lon - gov_offset},
+            {"lat": lat + gov_offset, "lon": lon + gov_offset},
+            {"lat": lat - gov_offset, "lon": lon + gov_offset},
+            {"lat": lat - gov_offset, "lon": lon - gov_offset},
+        ]
         
         encroaching = []
         legal = []
@@ -1228,14 +1113,9 @@ async def trigger_scan(request: ScanRequest):
             footprint_area = _polygon_area_sqm(bcoords)
             protected_hits = _protected_asset_hits(avg_lat, avg_lon, asset_grid, lat)
 
-            inside_scan_boundary = (
-                _point_in_polygon(avg_lat, avg_lon, city_boundary)
-                if city_boundary
-                else _is_inside_boundary(avg_lat, avg_lon, lat, lon, gov_offset)
-            )
             has_boundary_context = (
                 protected_hits
-                and inside_scan_boundary
+                and _is_inside_boundary(avg_lat, avg_lon, lat, lon, gov_offset)
                 and footprint_area >= 12
             )
 
@@ -1338,11 +1218,6 @@ async def trigger_scan(request: ScanRequest):
             "voice_summary": voice_summary,
             "govt_assets": govt_assets,
             "govt_boundary": govt_boundary,
-            "boundary_source": (
-                "OpenStreetMap/Nominatim city boundary"
-                if city_boundary
-                else "Generated city-radius fallback boundary"
-            ),
             "encroaching_buildings": [e["polygon"] for e in encroaching],
             "legal_buildings": legal,
             "env_data": env_data,
