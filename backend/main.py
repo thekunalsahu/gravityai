@@ -2,13 +2,13 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 from fastapi.middleware.cors import CORSMiddleware
-import random
 import uvicorn
 import logging
 import requests as req
 import json
 import os
 import re
+import math
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
@@ -199,6 +199,53 @@ def _is_inside_boundary(point_lat, point_lon, boundary_lat, boundary_lon, offset
     """Simple bounding box check."""
     return (boundary_lat - offset <= point_lat <= boundary_lat + offset and
             boundary_lon - offset <= point_lon <= boundary_lon + offset)
+
+
+def _polygon_area_sqm(coords: list) -> float:
+    """Approximate small building footprint area in square meters."""
+    if len(coords) < 3:
+        return 0.0
+    ref_lat = math.radians(sum(lat for lat, _ in coords) / len(coords))
+    meters_per_degree_lat = 111_320
+    meters_per_degree_lon = 111_320 * math.cos(ref_lat)
+    points = [(lon * meters_per_degree_lon, lat * meters_per_degree_lat) for lat, lon in coords]
+    area = 0.0
+    for index, (x1, y1) in enumerate(points):
+        x2, y2 = points[(index + 1) % len(points)]
+        area += (x1 * y2) - (x2 * y1)
+    return abs(area) / 2
+
+
+def _estimate_land_rate_per_sqm(sector: str, govt_assets_count: int) -> int:
+    """Use a deterministic city-tier rate instead of random pricing."""
+    city = (sector or "").lower()
+    premium_markets = ("delhi", "mumbai", "bangalore", "bengaluru", "gurgaon", "gurugram")
+    tier_one = ("hyderabad", "pune", "chennai", "kolkata", "ahmedabad", "noida")
+    tier_two = ("indore", "bhopal", "jaipur", "lucknow", "nagpur", "surat", "vadodara")
+
+    if any(name in city for name in premium_markets):
+        base_rate = 120_000
+    elif any(name in city for name in tier_one):
+        base_rate = 75_000
+    elif any(name in city for name in tier_two):
+        base_rate = 42_000
+    else:
+        base_rate = 25_000
+
+    infrastructure_modifier = min(govt_assets_count, 5) * 0.03
+    return round(base_rate * (1 + infrastructure_modifier))
+
+
+def _analysis_confidence(building_count: int, encroaching_count: int) -> float:
+    if building_count == 0:
+        return 55.0
+    if encroaching_count == 0:
+        return 82.0
+    return min(92.0, 72.0 + min(building_count, 20))
+
+
+def _encroachment_risk_score(encroaching_count: int, area_sqm: int) -> int:
+    return min(100, int((encroaching_count * 18) + (area_sqm / 120)))
 
 
 
@@ -579,7 +626,7 @@ async def trigger_scan(request: ScanRequest):
         
         encroaching = []
         legal = []
-        total_encroached_area = 0
+        total_encroached_area = 0.0
         
         for b in buildings_raw:
             bcoords = b["coords"]
@@ -587,23 +634,33 @@ async def trigger_scan(request: ScanRequest):
             avg_lon = sum(c[1] for c in bcoords) / len(bcoords)
             poly = [{"lat": c[0], "lon": c[1]} for c in bcoords]
             
+            footprint_area = _polygon_area_sqm(bcoords)
+
             if _is_inside_boundary(avg_lat, avg_lon, lat, lon, gov_offset):
-                total_encroached_area += len(bcoords) * 48
-                encroaching.append({"polygon": poly, "type": b["type"], "levels": b["levels"]})
+                total_encroached_area += footprint_area
+                encroaching.append({
+                    "polygon": poly,
+                    "type": b["type"],
+                    "levels": b["levels"],
+                    "area_sqm": round(footprint_area, 1),
+                })
             else:
                 legal.append(poly)
-        
+
+        warnings = []
         if not buildings_raw:
-            offset = 0.0006
-            encroaching = [{"polygon": [{"lat": lat + offset, "lon": lon + offset},{"lat": lat + offset, "lon": lon - offset},{"lat": lat - offset, "lon": lon - offset},{"lat": lat - offset, "lon": lon + offset}],"type": "residential","levels": "2"}]
-            total_encroached_area = 450
-        
-        total = max(len(buildings_raw), 1)
+            warnings.append(
+                "No OpenStreetMap building footprints were found near this location; no encroachment is predicted from fallback data."
+            )
+
+        total = len(buildings_raw)
         enc_count = len(encroaching)
-        area_sqm = total_encroached_area
-        land_value = round(area_sqm * random.uniform(9000, 16000), 2)
+        area_sqm = int(round(total_encroached_area))
+        land_rate_per_sqm = _estimate_land_rate_per_sqm(city, len(govt_assets))
+        land_value = round(area_sqm * land_rate_per_sqm, 2)
         penalty = round(land_value * 0.18, 2)
-        accuracy_score = 99.8 if enc_count > 0 else 100.0
+        accuracy_score = _analysis_confidence(total, enc_count)
+        risk_score = _encroachment_risk_score(enc_count, area_sqm)
 
         # Voice Summary Generation
         asset_counts = {}
@@ -614,10 +671,10 @@ async def trigger_scan(request: ScanRequest):
         if not asset_str: asset_str = "no major government infrastructure"
         
         voice_summary = (
-            f"Scan complete for {city}. I have detected {enc_count} illegal structures within government boundaries. "
+            f"Scan complete for {city}. I found {total} mapped building footprints and flagged {enc_count} possible boundary conflicts. "
             f"The total encroached area is {area_sqm} square meters. "
             f"In this vicinity, I also identified the following government assets: {asset_str}. "
-            f"Confidence level is {accuracy_score} percent."
+            f"Confidence level is {accuracy_score} percent; field verification is required."
         )
 
         return {
@@ -626,15 +683,19 @@ async def trigger_scan(request: ScanRequest):
             "encroaching_count": enc_count,
             "area_sqm": area_sqm,
             "land_value": land_value,
+            "land_rate_per_sqm": land_rate_per_sqm,
             "green_loss": env_data.get("risk", 10),
             "penalty": penalty,
+            "risk_score": risk_score,
             "voice_summary": voice_summary,
             "govt_assets": govt_assets,
             "govt_boundary": govt_boundary,
             "encroaching_buildings": [e["polygon"] for e in encroaching],
             "legal_buildings": legal,
             "env_data": env_data,
-            "accuracy": accuracy_score
+            "accuracy": accuracy_score,
+            "warnings": warnings,
+            "method": "OSM building centroid + footprint area + deterministic city-tier valuation",
         }
     except Exception as e:
         logger.error(f"Scan error: {e}")

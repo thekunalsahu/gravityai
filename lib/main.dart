@@ -1530,9 +1530,11 @@ class _DashboardScreenState extends State<DashboardScreen>
           _scanning = false;
           _ready = true;
           _status = "ANALYSIS COMPLETE - ${data['accuracy']}% CONFIDENCE";
-          _risk = data['encroaching_count'] != null
-              ? (data['encroaching_count'] * 15).clamp(0, 100)
-              : 0;
+          _risk = data['risk_score'] != null
+              ? (data['risk_score'] as num).round().clamp(0, 100)
+              : data['encroaching_count'] != null
+                  ? (data['encroaching_count'] * 15).clamp(0, 100)
+                  : 0;
           _area = data['area_sqm'] ?? 0;
           _val = (data['land_value'] ?? 0.0).toDouble();
           _fine = (data['penalty'] ?? 0.0).toDouble();
@@ -1542,7 +1544,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             _envData = Map<String, dynamic>.from(data['env_data']);
           }
           _notice = data['legal_notice_text'] ??
-              "Unauthorized construction detected.";
+              "Possible boundary conflict detected from mapped building footprints. Field verification is required before action.";
 
           String voiceSum = data['voice_summary'] ?? "Scan complete.";
           _speak(voiceSum);
@@ -1605,16 +1607,19 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (mounted) {
         final message = e.toString();
         setState(() {
-          if (query.isNotEmpty &&
-              !message.toLowerCase().contains("location not found") &&
-              !message.contains("FormatException")) {
-            _applyDemoScanState(query, fallbackReason: message);
-          } else {
-            _scanning = false;
-            _status = message.contains("Timeout")
-                ? "TIMEOUT: SERVER TOOK TOO LONG"
-                : "ERROR: $e";
-          }
+          _scanning = false;
+          _ready = false;
+          _risk = 0;
+          _area = 0;
+          _val = 0;
+          _fine = 0;
+          _veg = 0;
+          _accuracy = 0;
+          _anomalyPolygons.clear();
+          _govtPolygons.clear();
+          _status = message.contains("Timeout")
+              ? "TIMEOUT: SERVER TOOK TOO LONG"
+              : "ERROR: $e";
         });
       }
     }
@@ -4271,26 +4276,33 @@ class _DashboardScreenState extends State<DashboardScreen>
   // ========================================================
   // CHANGE DETECTION TIMELINE - ESRI WAYBACK TILE URLs
   // ========================================================
+  static const Map<int, int> _waybackTileIdsByYear = {
+    2018: 23448,
+    2019: 4756,
+    2020: 29260,
+    2021: 26120,
+    2022: 45134,
+    2023: 56102,
+    2024: 16453,
+    2025: 13192,
+  };
+
+  String _currentSatelliteTileUrl() {
+    return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+  }
+
+  String _waybackSatelliteTileUrl(int year) {
+    final tileId = _waybackTileIdsByYear[year];
+    if (tileId == null) return _currentSatelliteTileUrl();
+    return 'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/GoogleMapsCompatible/MapServer/tile/$tileId/{z}/{y}/{x}';
+  }
+
   String _getTimelineTileUrl() {
     if (!_isSatellite) return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
     if (!_showTimeline || _timelineYear >= 2026) {
-      return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+      return _currentSatelliteTileUrl();
     }
-    // ESRI Wayback historical imagery snapshots
-    const Map<int, String> waybackDates = {
-      2018: 'default028mm',
-      2019: 'default028mm',
-      2020: 'default028mm',
-      2021: 'default028mm',
-      2022: 'default028mm',
-      2023: 'default028mm',
-      2024: 'default028mm',
-      2025: 'default028mm',
-    };
-    if (waybackDates.containsKey(_timelineYear)) {
-      return 'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/${waybackDates[_timelineYear]}/MapServer/tile/{z}/{y}/{x}';
-    }
-    return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+    return _waybackSatelliteTileUrl(_timelineYear);
   }
 
   // ========================================================
@@ -5898,6 +5910,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   void _showComp() {
     try {
       bool isSmall = MediaQuery.of(context).size.width < 900;
+      final compareYear = _timelineYear < 2026 ? _timelineYear : 2021;
+      final oldTileUrl = _waybackSatelliteTileUrl(compareYear);
+      final currentTileUrl = _currentSatelliteTileUrl();
       showDialog(
           context: context,
           builder: (c) => Dialog(
@@ -5955,26 +5970,26 @@ class _DashboardScreenState extends State<DashboardScreen>
                               ? SingleChildScrollView(
                                   child: Column(children: [
                                   _compMapTile(
-                                      "📅 2021 — Before Construction",
-                                      'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/{z}/{y}/{x}',
+                                      "$compareYear - Historical Imagery",
+                                      oldTileUrl,
                                       false),
                                   const SizedBox(height: 12),
                                   _compMapTile(
-                                      "📅 2026 — Current (Encroachments Detected)",
-                                      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                                      "Current - Latest Imagery + Detected Zones",
+                                      currentTileUrl,
                                       true),
                                 ]))
                               : Row(children: [
                                   Expanded(
                                       child: _compMapTile(
-                                          "📅 2021 — Before Construction",
-                                          'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/{z}/{y}/{x}',
+                                          "$compareYear - Historical Imagery",
+                                          oldTileUrl,
                                           false)),
                                   const SizedBox(width: 12),
                                   Expanded(
                                       child: _compMapTile(
-                                          "📅 2026 — Current (Encroachments Detected)",
-                                          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                                          "Current - Latest Imagery + Detected Zones",
+                                          currentTileUrl,
                                           true)),
                                 ]),
                         )
