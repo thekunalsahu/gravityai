@@ -10,6 +10,8 @@ import os
 import re
 import math
 import secrets
+import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -49,8 +51,178 @@ VIASOCKET_WEBHOOK_URL = os.getenv("VIASOCKET_WEBHOOK_URL", "")
 OFFICER_USER_ID = os.getenv("OFFICER_USER_ID", "")
 OFFICER_PASSWORD = os.getenv("OFFICER_PASSWORD", "")
 STATE_ALERT_EMAIL_MAP = os.getenv("STATE_ALERT_EMAIL_MAP", "{}")
-AUTH_TOKENS: set[str] = set()
-COMPLAINTS: list[dict] = []
+DATABASE_PATH = Path(os.getenv("SQLITE_DB_PATH", BASE_DIR / "gravity_ai.sqlite3"))
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _db_connection() -> sqlite3.Connection:
+    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _init_db() -> None:
+    with closing(_db_connection()) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS auth_sessions (
+                token TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                revoked_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS complaints (
+                id TEXT PRIMARY KEY,
+                reporter TEXT NOT NULL,
+                email TEXT,
+                phone TEXT,
+                target TEXT NOT NULL,
+                description TEXT NOT NULL,
+                evidence TEXT,
+                lat REAL NOT NULL,
+                lon REAL NOT NULL,
+                state TEXT,
+                risk_score INTEGER DEFAULT 0,
+                area_sqm INTEGER DEFAULT 0,
+                status TEXT NOT NULL,
+                action TEXT NOT NULL,
+                submitted_at TEXT NOT NULL,
+                updated_at TEXT
+            );
+            """
+        )
+        conn.commit()
+
+
+def _row_to_complaint(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "reporter": row["reporter"],
+        "email": row["email"] or "",
+        "phone": row["phone"] or "",
+        "target": row["target"],
+        "description": row["description"],
+        "evidence": row["evidence"] or "No photo uploaded",
+        "lat": row["lat"],
+        "lon": row["lon"],
+        "state": row["state"] or "UNKNOWN",
+        "risk_score": row["risk_score"] or 0,
+        "area_sqm": row["area_sqm"] or 0,
+        "status": row["status"],
+        "action": row["action"],
+        "submittedAt": row["submitted_at"],
+        "updatedAt": row["updated_at"],
+    }
+
+
+def _save_session(token: str, user_id: str) -> None:
+    now = _utc_now()
+    with closing(_db_connection()) as conn:
+        conn.execute(
+            """
+            INSERT INTO auth_sessions (token, user_id, created_at, last_seen_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (token, user_id, now, now),
+        )
+        conn.commit()
+
+
+def _session_user(token: str) -> str | None:
+    now = _utc_now()
+    with closing(_db_connection()) as conn:
+        row = conn.execute(
+            """
+            SELECT user_id FROM auth_sessions
+            WHERE token = ? AND revoked_at IS NULL
+            """,
+            (token,),
+        ).fetchone()
+        if row:
+            conn.execute(
+                "UPDATE auth_sessions SET last_seen_at = ? WHERE token = ?",
+                (now, token),
+            )
+            conn.commit()
+            return row["user_id"]
+    return None
+
+
+def _revoke_session(token: str) -> None:
+    with closing(_db_connection()) as conn:
+        conn.execute(
+            "UPDATE auth_sessions SET revoked_at = ? WHERE token = ?",
+            (_utc_now(), token),
+        )
+        conn.commit()
+
+
+def _insert_complaint(complaint: dict) -> None:
+    with closing(_db_connection()) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO complaints (
+                id, reporter, email, phone, target, description, evidence,
+                lat, lon, state, risk_score, area_sqm, status, action,
+                submitted_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                complaint["id"],
+                complaint["reporter"],
+                complaint.get("email", ""),
+                complaint.get("phone", ""),
+                complaint["target"],
+                complaint["description"],
+                complaint.get("evidence", "No photo uploaded"),
+                complaint["lat"],
+                complaint["lon"],
+                complaint.get("state", "UNKNOWN"),
+                complaint.get("risk_score", 0),
+                complaint.get("area_sqm", 0),
+                complaint["status"],
+                complaint["action"],
+                complaint["submittedAt"],
+                complaint.get("updatedAt"),
+            ),
+        )
+        conn.commit()
+
+
+def _list_complaints() -> list[dict]:
+    with closing(_db_connection()) as conn:
+        rows = conn.execute(
+            "SELECT * FROM complaints ORDER BY submitted_at DESC"
+        ).fetchall()
+        return [_row_to_complaint(row) for row in rows]
+
+
+def _update_complaint_record(complaint_id: str, status: str, action: str) -> dict | None:
+    updated_at = _utc_now()
+    with closing(_db_connection()) as conn:
+        conn.execute(
+            """
+            UPDATE complaints
+            SET status = ?, action = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (status, action, updated_at, complaint_id),
+        )
+        row = conn.execute(
+            "SELECT * FROM complaints WHERE id = ?",
+            (complaint_id,),
+        ).fetchone()
+        conn.commit()
+        return _row_to_complaint(row) if row else None
+
+
+_init_db()
 
 @app.get("/")
 async def root():
@@ -144,9 +316,10 @@ def _require_auth(authorization: str | None) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
     token = authorization.removeprefix("Bearer ").strip()
-    if token not in AUTH_TOKENS:
+    user_id = _session_user(token)
+    if not user_id:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    return token
+    return user_id
 
 
 @app.post("/api/auth/login")
@@ -156,8 +329,22 @@ async def login(request: AuthRequest):
     if request.user_id.strip() != OFFICER_USER_ID or request.password != OFFICER_PASSWORD:
         raise HTTPException(status_code=401, detail="Invalid user ID or password")
     token = secrets.token_urlsafe(32)
-    AUTH_TOKENS.add(token)
-    return {"status": "success", "token": token, "user": request.user_id.strip()}
+    user = request.user_id.strip()
+    _save_session(token, user)
+    return {"status": "success", "token": token, "user": user}
+
+
+@app.get("/api/auth/session")
+async def session(authorization: str | None = Header(default=None)):
+    user = _require_auth(authorization)
+    return {"status": "success", "user": user}
+
+
+@app.post("/api/auth/logout")
+async def logout(authorization: str | None = Header(default=None)):
+    if authorization and authorization.startswith("Bearer "):
+        _revoke_session(authorization.removeprefix("Bearer ").strip())
+    return {"status": "success"}
 
 
 @app.post("/api/complaints")
@@ -182,7 +369,7 @@ async def submit_complaint(request: ComplaintRequest):
         "action": "Sent to state alert workflow",
         "submittedAt": submitted_at,
     }
-    COMPLAINTS.insert(0, complaint)
+    _insert_complaint(complaint)
 
     alert_email = _state_alert_email(state)
     viasocket_payload = {
@@ -210,7 +397,7 @@ async def submit_complaint(request: ComplaintRequest):
 @app.get("/api/complaints")
 async def list_complaints(authorization: str | None = Header(default=None)):
     _require_auth(authorization)
-    return {"status": "success", "complaints": COMPLAINTS}
+    return {"status": "success", "complaints": _list_complaints()}
 
 
 @app.patch("/api/complaints/{complaint_id}")
@@ -220,26 +407,20 @@ async def update_complaint(
     authorization: str | None = Header(default=None),
 ):
     _require_auth(authorization)
-    for complaint in COMPLAINTS:
-        if complaint["id"] != complaint_id:
-            continue
-        complaint["status"] = request.status
-        complaint["action"] = request.action
-        complaint["updatedAt"] = datetime.now(timezone.utc).isoformat()
-        integration = _post_to_viasocket({
-            "workflow": "bhu_prahari_complaint_status_update",
-            "database_action": "update_complaint_status",
-            "gmail_action": "send_status_update",
-            "complaint_id": complaint_id,
-            "status": request.status,
-            "action": request.action,
-            "complaint": complaint,
-        })
-        return {
-            "status": "success",
-            "complaint": complaint,
-            "integration": integration,
-        }
+    complaint = _update_complaint_record(complaint_id, request.status, request.action)
+    if complaint:
+        integration = _post_to_viasocket(
+            {
+                "workflow": "bhu_prahari_complaint_status_update",
+                "database_action": "update_complaint_status",
+                "gmail_action": "send_status_update",
+                "complaint_id": complaint_id,
+                "status": request.status,
+                "action": request.action,
+                "complaint": complaint,
+            }
+        )
+        return {"status": "success", "complaint": complaint, "integration": integration}
     raise HTTPException(status_code=404, detail="Complaint not found")
 
 
@@ -360,6 +541,16 @@ def _is_inside_boundary(point_lat, point_lon, boundary_lat, boundary_lon, offset
             boundary_lon - offset <= point_lon <= boundary_lon + offset)
 
 
+def _approx_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Fast equirectangular distance for local audit thresholds."""
+    ref_lat = math.radians((lat1 + lat2) / 2)
+    meters_per_degree_lat = 111_320
+    meters_per_degree_lon = 111_320 * math.cos(ref_lat)
+    dx = (lon1 - lon2) * meters_per_degree_lon
+    dy = (lat1 - lat2) * meters_per_degree_lat
+    return math.sqrt((dx * dx) + (dy * dy))
+
+
 def _polygon_area_sqm(coords: list) -> float:
     """Approximate small building footprint area in square meters."""
     if len(coords) < 3:
@@ -407,6 +598,16 @@ def _encroachment_risk_score(encroaching_count: int, area_sqm: int) -> int:
     return min(100, int((encroaching_count * 18) + (area_sqm / 120)))
 
 
+def _near_government_context(lat: float, lon: float, govt_assets: list) -> bool:
+    for asset in govt_assets:
+        asset_lat = asset.get("lat")
+        asset_lon = asset.get("lon")
+        if asset_lat is None or asset_lon is None:
+            continue
+        if _approx_distance_m(lat, lon, float(asset_lat), float(asset_lon)) <= 45:
+            return True
+    return False
+
 
 def _fetch_govt_assets(lat: float, lon: float, radius: int = 500) -> list:
     """Fetch government assets like schools, hospitals, etc. from OSM."""
@@ -417,7 +618,7 @@ def _fetch_govt_assets(lat: float, lon: float, radius: int = 500) -> list:
   way["amenity"~"school|hospital|clinic|police|fire_station|government"](around:{radius},{lat},{lon});
   node["office"="government"](around:{radius},{lat},{lon});
 );
-out body;
+out center;
 """
     endpoints = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
     assets = []
@@ -430,7 +631,15 @@ out body;
                     tags = el.get("tags", {})
                     name = tags.get("name", "Unnamed Asset")
                     atype = tags.get("amenity") or tags.get("office") or "Government Asset"
-                    assets.append({"name": name, "type": atype})
+                    center = el.get("center", {})
+                    asset_lat = el.get("lat", center.get("lat"))
+                    asset_lon = el.get("lon", center.get("lon"))
+                    assets.append({
+                        "name": name,
+                        "type": atype,
+                        "lat": asset_lat,
+                        "lon": asset_lon,
+                    })
                 return assets
         except: continue
     return []
@@ -774,8 +983,10 @@ async def trigger_scan(request: ScanRequest):
         # STEP 3: Get Environmental Data from Groq
         env_data = _get_groq_env_data(city)
         
-        # STEP 4: Define MOCK Government Boundary
-        gov_offset = 0.0018
+        # STEP 4: Define an audit zone around the searched point. This is only
+        # a visualization aid; conflict prediction still requires nearby
+        # government/protected OSM context to avoid false positives.
+        gov_offset = 0.00055 if govt_assets else 0.00025
         govt_boundary = [
             {"lat": lat + gov_offset, "lon": lon - gov_offset},
             {"lat": lat + gov_offset, "lon": lon + gov_offset},
@@ -795,7 +1006,14 @@ async def trigger_scan(request: ScanRequest):
             
             footprint_area = _polygon_area_sqm(bcoords)
 
-            if _is_inside_boundary(avg_lat, avg_lon, lat, lon, gov_offset):
+            has_boundary_context = (
+                govt_assets
+                and _is_inside_boundary(avg_lat, avg_lon, lat, lon, gov_offset)
+                and _near_government_context(avg_lat, avg_lon, govt_assets)
+                and footprint_area >= 12
+            )
+
+            if has_boundary_context:
                 total_encroached_area += footprint_area
                 encroaching.append({
                     "polygon": poly,
@@ -811,6 +1029,10 @@ async def trigger_scan(request: ScanRequest):
             warnings.append(
                 "No OpenStreetMap building footprints were found near this location; no encroachment is predicted from fallback data."
             )
+        if not govt_assets:
+            warnings.append(
+                "No nearby government/protected OSM asset was found, so unauthorized construction is not inferred from building density alone."
+            )
 
         total = len(buildings_raw)
         enc_count = len(encroaching)
@@ -820,6 +1042,15 @@ async def trigger_scan(request: ScanRequest):
         penalty = round(land_value * 0.18, 2)
         accuracy_score = _analysis_confidence(total, enc_count)
         risk_score = _encroachment_risk_score(enc_count, area_sqm)
+        if enc_count == 0:
+            risk_score = 0
+            warnings.append(
+                "Mapped buildings do not meet the protected-boundary conflict rule. Treat this as no predicted encroachment until cadastral/Bhu-Naksha evidence is supplied."
+            )
+        else:
+            warnings.append(
+                "Potential conflict is a screening flag, not a legal conclusion. Field verification and cadastral records are required."
+            )
 
         # Voice Summary Generation
         asset_counts = {}
@@ -829,12 +1060,27 @@ async def trigger_scan(request: ScanRequest):
         asset_str = ", ".join([f"{count} {type.replace('_', ' ')}" for type, count in asset_counts.items()])
         if not asset_str: asset_str = "no major government infrastructure"
         
-        voice_summary = (
-            f"Scan complete for {city}. I found {total} mapped building footprints and flagged {enc_count} possible boundary conflicts. "
-            f"The total encroached area is {area_sqm} square meters. "
-            f"In this vicinity, I also identified the following government assets: {asset_str}. "
-            f"Confidence level is {accuracy_score} percent; field verification is required."
-        )
+        if enc_count:
+            voice_summary = (
+                f"Scan complete for {city}. I found {total} mapped building footprints and flagged {enc_count} possible protected-boundary conflict. "
+                f"The screened conflict area is {area_sqm} square meters. "
+                f"In this vicinity, I also identified the following government assets: {asset_str}. "
+                f"Confidence level is {accuracy_score} percent; field verification is required."
+            )
+            legal_notice_text = (
+                "Potential protected-boundary conflict detected from mapped building footprints near government/protected context. "
+                "Verify with cadastral records and field inspection before action."
+            )
+        else:
+            voice_summary = (
+                f"Scan complete for {city}. I found {total} mapped building footprints and no protected-boundary conflict was predicted. "
+                f"In this vicinity, I identified {asset_str}. "
+                f"Confidence level is {accuracy_score} percent; continue with field verification for official decisions."
+            )
+            legal_notice_text = (
+                "No protected-boundary conflict is predicted from available mapped footprints. "
+                "Use cadastral records, owner documents, and field inspection before administrative action."
+            )
 
         return {
             "status": "success",
@@ -854,7 +1100,8 @@ async def trigger_scan(request: ScanRequest):
             "env_data": env_data,
             "accuracy": accuracy_score,
             "warnings": warnings,
-            "method": "OSM building centroid + footprint area + deterministic city-tier valuation",
+            "legal_notice_text": legal_notice_text,
+            "method": "OSM building footprints + nearby government/protected context + deterministic valuation",
         }
     except Exception as e:
         logger.error(f"Scan error: {e}")

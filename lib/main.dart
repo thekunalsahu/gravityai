@@ -124,6 +124,8 @@ class AuthSession {
   static String? token;
   static String? user;
 
+  static bool get isLoggedIn => token != null && token!.isNotEmpty;
+
   static Future<void> save(String nextToken, String nextUser) async {
     token = nextToken;
     user = nextUser;
@@ -136,6 +138,54 @@ class AuthSession {
     final prefs = await SharedPreferences.getInstance();
     token = prefs.getString('auth_token');
     user = prefs.getString('auth_user');
+  }
+
+  static Future<bool> restoreAndValidate() async {
+    await restore();
+    if (!isLoggedIn) return false;
+    try {
+      final response = await getBackendJson(
+        "/api/auth/session",
+        bearerToken: token,
+        timeout: const Duration(seconds: 12),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        user = data['user']?.toString() ?? user;
+        final prefs = await SharedPreferences.getInstance();
+        if (user != null && user!.isNotEmpty) {
+          await prefs.setString('auth_user', user!);
+        }
+        return true;
+      }
+      if (response.statusCode == 401) await clear();
+      return false;
+    } catch (_) {
+      return isLoggedIn;
+    }
+  }
+
+  static Future<void> clear() async {
+    token = null;
+    user = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+    await prefs.remove('auth_user');
+  }
+
+  static Future<void> logout() async {
+    final currentToken = token;
+    if (currentToken != null && currentToken.isNotEmpty) {
+      try {
+        await postBackendJson(
+          "/api/auth/logout",
+          "{}",
+          bearerToken: currentToken,
+          timeout: const Duration(seconds: 8),
+        );
+      } catch (_) {}
+    }
+    await clear();
   }
 }
 
@@ -196,9 +246,26 @@ class _LandingPageState extends State<LandingPage> {
   final ScrollController _scrollController = ScrollController();
 
   @override
+  void initState() {
+    super.initState();
+    _restoreOfficerSession();
+  }
+
+  @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _restoreOfficerSession() async {
+    final active = await AuthSession.restoreAndValidate();
+    if (!mounted || !active) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const DashboardScreen(isOfficer: true),
+      ),
+    );
   }
 
   void _openLoginPage() {
@@ -1325,6 +1392,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   String _stateName = "MADHYA PRADESH";
   final List<Map<String, String>> _tasksList = [];
   final TextEditingController _citizenNameCtrl = TextEditingController();
+  final TextEditingController _citizenEmailCtrl = TextEditingController();
   final TextEditingController _citizenPhoneCtrl = TextEditingController();
   final TextEditingController _citizenComplaintCtrl = TextEditingController();
   final TextEditingController _citizenStatusCtrl = TextEditingController();
@@ -1416,6 +1484,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _timerCtrl.dispose();
     _droneIpCtrl.dispose();
     _citizenNameCtrl.dispose();
+    _citizenEmailCtrl.dispose();
     _citizenPhoneCtrl.dispose();
     _citizenComplaintCtrl.dispose();
     _citizenStatusCtrl.dispose();
@@ -1631,11 +1700,11 @@ class _DashboardScreenState extends State<DashboardScreen>
         setState(() => _status = "CROSS-REFERENCING GEOJSON AND BHU-NAKSHA...");
       }
 
-      final apiRes = await http
-          .post(Uri.parse('$kBackendUrl/api/scan'),
-              headers: {'Content-Type': 'application/json'},
-              body: json.encode({'lat': lat, 'lon': lon, 'sector': query}))
-          .timeout(const Duration(seconds: 90));
+      final apiRes = await postBackendJson(
+        "/api/scan",
+        json.encode({'lat': lat, 'lon': lon, 'sector': query}),
+        timeout: const Duration(seconds: 90),
+      );
 
       if (apiRes.statusCode == 200) {
         final data = json.decode(apiRes.body);
@@ -1650,24 +1719,28 @@ class _DashboardScreenState extends State<DashboardScreen>
 
         if (!mounted) return;
         setState(() {
-          _scanning = false;
-          _ready = true;
-          _status = "ANALYSIS COMPLETE - ${data['accuracy']}% CONFIDENCE";
-          _risk = data['risk_score'] != null
+          final risk = data['risk_score'] != null
               ? (data['risk_score'] as num).round().clamp(0, 100)
               : data['encroaching_count'] != null
                   ? (data['encroaching_count'] * 15).clamp(0, 100)
                   : 0;
+          final accuracy = (data['accuracy'] ?? 100.0).toDouble();
+          _scanning = false;
+          _ready = true;
+          _status = risk > 0
+              ? "POTENTIAL CONFLICT FLAGGED - ${accuracy.toStringAsFixed(1)}% CONFIDENCE"
+              : "NO PROTECTED CONFLICT PREDICTED - ${accuracy.toStringAsFixed(1)}% CONFIDENCE";
+          _risk = risk;
           _area = data['area_sqm'] ?? 0;
           _val = (data['land_value'] ?? 0.0).toDouble();
           _fine = (data['penalty'] ?? 0.0).toDouble();
           _veg = data['green_loss'] ?? 0;
-          _accuracy = (data['accuracy'] ?? 100.0).toDouble();
+          _accuracy = accuracy;
           if (data['env_data'] != null) {
             _envData = Map<String, dynamic>.from(data['env_data']);
           }
           _notice = data['legal_notice_text'] ??
-              "Possible boundary conflict detected from mapped building footprints. Field verification is required before action.";
+              "No protected-boundary conflict is predicted from currently mapped data. Field verification is recommended for official closure.";
 
           String voiceSum = data['voice_summary'] ?? "Scan complete.";
           _speak(voiceSum);
@@ -1750,7 +1823,6 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   void _applyDemoScanState(String sector, {String? fallbackReason}) {
     const double delta = 0.00042;
-    const double inner = 0.00016;
     final LatLng center = _loc;
 
     _scanning = false;
@@ -1758,18 +1830,18 @@ class _DashboardScreenState extends State<DashboardScreen>
     _hasSearched = true;
     _evictSent = false;
     _canDemolish = false;
-    _risk = 72;
-    _area = 4250;
-    _val = 18500000;
-    _fine = 1850000;
-    _veg = 18;
-    _accuracy = 94.0;
+    _risk = 0;
+    _area = 0;
+    _val = 0;
+    _fine = 0;
+    _veg = 0;
+    _accuracy = 82.0;
     _envData = {"temp": 32, "aqi": 145, "soil": "Alluvial", "moisture": 45};
     _notice =
-        "Preliminary compliance notice draft for $sector. Field verification is recommended before any administrative action.";
+        "No protected-boundary conflict is predicted from local demo state for $sector. Run a live scan for authoritative screening.";
     _status = fallbackReason == null
-        ? "ANALYSIS COMPLETE - DEMO DATA READY"
-        : "DEMO ANALYSIS READY - BACKEND FALLBACK";
+        ? "NO PROTECTED CONFLICT PREDICTED - DEMO AUDIT READY"
+        : "NEUTRAL DEMO AUDIT READY - BACKEND FALLBACK";
     _govtPolygons
       ..clear()
       ..add(Polygon(
@@ -1783,19 +1855,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           borderColor: Colors.blueAccent,
           borderStrokeWidth: 3,
           isFilled: true));
-    _anomalyPolygons
-      ..clear()
-      ..add(Polygon(
-          points: [
-            LatLng(center.latitude - inner, center.longitude - inner),
-            LatLng(center.latitude - inner, center.longitude + inner),
-            LatLng(center.latitude + inner, center.longitude + inner),
-            LatLng(center.latitude + inner, center.longitude - inner),
-          ],
-          color: Colors.red.withValues(alpha: 0.42),
-          borderColor: Colors.redAccent,
-          borderStrokeWidth: 2,
-          isFilled: true));
+    _anomalyPolygons.clear();
   }
 
   Future<void> _loadOfficerComplaints() async {
@@ -1828,6 +1888,17 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
+  Future<void> _logout() async {
+    _timer?.cancel();
+    await AuthSession.logout();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const LandingPage()),
+      (_) => false,
+    );
+  }
+
   Future<void> _submitBhuPrahariComplaint() async {
     final target = _searchCtrl.text.trim().isEmpty
         ? "Pinned map location"
@@ -1853,7 +1924,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     final complaint = {
       "id": id,
       "reporter": reporter,
-      "email": "",
+      "email": _isAnonymous ? "" : _citizenEmailCtrl.text.trim(),
       "phone": _isAnonymous ? "" : _citizenPhoneCtrl.text.trim(),
       "target": target,
       "description": description,
@@ -1900,6 +1971,8 @@ class _DashboardScreenState extends State<DashboardScreen>
       _status = "BHU-PRAHARI COMPLAINT SUBMITTED - $id";
       _citizenStatusCtrl.text = id;
       _citizenComplaintCtrl.clear();
+      _citizenEmailCtrl.clear();
+      _citizenPhoneCtrl.clear();
       _citizenEvidenceName = null;
     });
 
@@ -3036,6 +3109,32 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
           ),
           const SizedBox(height: 10),
+          TextField(
+            controller: _citizenEmailCtrl,
+            keyboardType: TextInputType.emailAddress,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: const InputDecoration(
+              hintText: "Email ID (optional)",
+              prefixIcon:
+                  Icon(Icons.alternate_email, color: Colors.orangeAccent),
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _citizenPhoneCtrl,
+            keyboardType: TextInputType.phone,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: const InputDecoration(
+              hintText: "Phone number (optional)",
+              prefixIcon:
+                  Icon(Icons.phone_outlined, color: Colors.orangeAccent),
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 10),
         ],
         TextField(
           controller: _citizenComplaintCtrl,
@@ -3161,6 +3260,11 @@ class _DashboardScreenState extends State<DashboardScreen>
         const SizedBox(height: 3),
         Text(item['action'].toString(),
             style: const TextStyle(color: Colors.white54, fontSize: 11)),
+        if ((item['email'] ?? '').toString().isNotEmpty) ...[
+          const SizedBox(height: 3),
+          Text("Email: ${item['email']}",
+              style: const TextStyle(color: Colors.white38, fontSize: 10)),
+        ],
         if ((item['evidence'] ?? '').toString().isNotEmpty) ...[
           const SizedBox(height: 3),
           Text("Evidence: ${item['evidence']}",
@@ -3285,6 +3389,18 @@ class _DashboardScreenState extends State<DashboardScreen>
               const SizedBox(height: 5),
               Text("Reporter: ${item['reporter']}",
                   style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              if ((item['email'] ?? '').toString().isNotEmpty) ...[
+                const SizedBox(height: 5),
+                Text("Email: ${item['email']}",
+                    style:
+                        const TextStyle(color: Colors.white54, fontSize: 12)),
+              ],
+              if ((item['phone'] ?? '').toString().isNotEmpty) ...[
+                const SizedBox(height: 5),
+                Text("Phone: ${item['phone']}",
+                    style:
+                        const TextStyle(color: Colors.white54, fontSize: 12)),
+              ],
               const SizedBox(height: 5),
               Text(
                   "Location: ${lat.toStringAsFixed(5)}, ${lon.toStringAsFixed(5)}",
@@ -3530,16 +3646,18 @@ class _DashboardScreenState extends State<DashboardScreen>
               const Spacer(),
               if (!isMobile) ...[
                 if (widget.isOfficer) ...[
-                  const Column(
+                  Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text("AUTHORIZED USER",
-                            style: TextStyle(
+                        Text((AuthSession.user ?? "Officer").toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
                                 color: Color(0xFF39FF14),
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14)),
-                        Text("SECURE SESSION ACTIVE",
+                        const Text("SECURE SESSION ACTIVE",
                             style:
                                 TextStyle(color: Colors.white54, fontSize: 10))
                       ]),
@@ -3584,11 +3702,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                 const SizedBox(width: 10),
               ],
               IconButton(
-                  onPressed: () {
-                    _timer?.cancel();
-                    Navigator.pushReplacement(context,
-                        MaterialPageRoute(builder: (c) => const LandingPage()));
-                  },
+                  tooltip: widget.isOfficer ? "Logout" : "Exit",
+                  onPressed: widget.isOfficer
+                      ? () => _logout()
+                      : () {
+                          _timer?.cancel();
+                          Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (c) => const LandingPage()));
+                        },
                   icon: const Icon(Icons.logout, color: Colors.white54))
             ])),
       ),
@@ -4274,7 +4397,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ]),
               const SizedBox(height: 10),
               Text(
-                  "High-Precision Pixel Differencing: Unauthorized Construction Detected.",
+                  _risk > 0
+                      ? "Protected-boundary screening: potential conflict flagged for field verification."
+                      : "Protected-boundary screening: no conflict predicted from mapped data.",
                   style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.5),
                       fontSize: 11)),
@@ -5017,6 +5142,13 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _showNotice() {
+    final hasConflict = _risk > 0;
+    final findingSentence = hasConflict
+        ? "Potential protected-boundary conflict has been flagged and requires field verification."
+        : "No protected-boundary conflict is predicted from the currently mapped data.";
+    final dispatchFinding = hasConflict
+        ? "Potential protected-boundary conflict flagged via satellite and OSM screening. Field verification is recommended."
+        : "No protected-boundary conflict is predicted from mapped screening data. Field verification may still be used for official closure.";
     try {
       showDialog(
           context: context,
@@ -5101,13 +5233,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                                         fontSize: 13,
                                         height: 1.6),
                                     children: [
-                                  const TextSpan(
-                                      text:
-                                          "Potential boundary mismatch has been flagged on coordinates corresponding to Bhu-Naksha ID: 449-A. The detected area spans approximately 4,250 sq.m and requires field verification. The estimated exposure is "),
                                   TextSpan(
-                                      text: "INR 18.5 Lakhs",
+                                      text:
+                                          "$findingSentence Screened area: $_area sq.m. Estimated exposure: "),
+                                  TextSpan(
+                                      text:
+                                          "INR ${(_fine / 100000).toStringAsFixed(1)} Lakhs",
                                       style: TextStyle(
-                                          color: Colors.red[400],
+                                          color: hasConflict
+                                              ? Colors.red[400]
+                                              : Colors.green[700],
                                           fontWeight: FontWeight.bold)),
                                   const TextSpan(text: "."),
                                 ])),
@@ -5207,8 +5342,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                         '*Detected Area:* $_area sq.m\n'
                                         '*Estimated Penalty:* Rs. ${(_fine / 100000).toStringAsFixed(1)} Lakhs\n'
                                         '*Risk Score:* $_risk/100\n\n'
-                                        'Unauthorized construction detected via satellite imagery analysis. '
-                                        'Field verification is recommended.\n\n'
+                                        '$dispatchFinding\n\n'
                                         'Ref: GRV-AUDIT-449-A\n'
                                         '_Digitally generated by Gravity AI Engine_');
                                     final waUri = Uri.parse(
@@ -5263,7 +5397,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   onPressed: () async {
                                     Navigator.pop(c);
                                     final smsBody = Uri.encodeComponent(
-                                        'GRAVITY AI NOTICE: Unauthorized construction detected at ${_searchCtrl.text.toUpperCase()} '
+                                        'GRAVITY AI NOTICE: ${hasConflict ? 'Potential protected-boundary conflict flagged' : 'No protected-boundary conflict predicted'} at ${_searchCtrl.text.toUpperCase()} '
                                         '(${_loc.latitude.toStringAsFixed(4)}, ${_loc.longitude.toStringAsFixed(4)}). '
                                         'Area: $_area sq.m | Penalty: Rs.${(_fine / 100000).toStringAsFixed(1)}L | Risk: $_risk/100. '
                                         'Ref: GRV-AUDIT-449-A');
@@ -6172,7 +6306,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                               const SizedBox(width: 8),
                               Expanded(
                                   child: Text(
-                                      "LEFT: Historical imagery (clean land) | RIGHT: Current imagery with detected encroachments (RED zones)",
+                                      _risk > 0
+                                          ? "LEFT: Historical imagery | RIGHT: Current imagery with screened conflict zones in red"
+                                          : "LEFT: Historical imagery | RIGHT: Current imagery with no screened conflict zones",
                                       style: TextStyle(
                                           color: Colors.amber
                                               .withValues(alpha: 0.8),
