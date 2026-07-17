@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'core/theme.dart';
 import 'core/web_bridge.dart';
 import 'features_page.dart';
@@ -37,14 +38,19 @@ Future<http.Response> postBackendJson(
   String path,
   String body, {
   Duration timeout = const Duration(seconds: 30),
+  String? bearerToken,
 }) async {
   Object? lastError;
   final endpoints = backendEndpoints(path);
   for (final endpoint in endpoints) {
     try {
+      final headers = {
+        'Content-Type': 'application/json',
+        if (bearerToken != null && bearerToken.isNotEmpty)
+          'Authorization': 'Bearer $bearerToken',
+      };
       final response = await http
-          .post(Uri.parse(endpoint),
-              headers: {'Content-Type': 'application/json'}, body: body)
+          .post(Uri.parse(endpoint), headers: headers, body: body)
           .timeout(timeout);
       if (response.statusCode < 500 || endpoint == endpoints.last) {
         return response;
@@ -57,6 +63,82 @@ Future<http.Response> postBackendJson(
   throw Exception(lastError ?? 'Backend request failed');
 }
 
+Future<http.Response> getBackendJson(
+  String path, {
+  Duration timeout = const Duration(seconds: 30),
+  String? bearerToken,
+}) async {
+  Object? lastError;
+  final endpoints = backendEndpoints(path);
+  for (final endpoint in endpoints) {
+    try {
+      final headers = {
+        'Content-Type': 'application/json',
+        if (bearerToken != null && bearerToken.isNotEmpty)
+          'Authorization': 'Bearer $bearerToken',
+      };
+      final response = await http
+          .get(Uri.parse(endpoint), headers: headers)
+          .timeout(timeout);
+      if (response.statusCode < 500 || endpoint == endpoints.last) {
+        return response;
+      }
+      lastError = "HTTP ${response.statusCode}: ${response.body}";
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw Exception(lastError ?? 'Backend request failed');
+}
+
+Future<http.Response> patchBackendJson(
+  String path,
+  String body, {
+  Duration timeout = const Duration(seconds: 30),
+  String? bearerToken,
+}) async {
+  Object? lastError;
+  final endpoints = backendEndpoints(path);
+  for (final endpoint in endpoints) {
+    try {
+      final headers = {
+        'Content-Type': 'application/json',
+        if (bearerToken != null && bearerToken.isNotEmpty)
+          'Authorization': 'Bearer $bearerToken',
+      };
+      final response = await http
+          .patch(Uri.parse(endpoint), headers: headers, body: body)
+          .timeout(timeout);
+      if (response.statusCode < 500 || endpoint == endpoints.last) {
+        return response;
+      }
+      lastError = "HTTP ${response.statusCode}: ${response.body}";
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw Exception(lastError ?? 'Backend request failed');
+}
+
+class AuthSession {
+  static String? token;
+  static String? user;
+
+  static Future<void> save(String nextToken, String nextUser) async {
+    token = nextToken;
+    user = nextUser;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('auth_token', nextToken);
+    await prefs.setString('auth_user', nextUser);
+  }
+
+  static Future<void> restore() async {
+    final prefs = await SharedPreferences.getInstance();
+    token = prefs.getString('auth_token');
+    user = prefs.getString('auth_user');
+  }
+}
+
 class BhuPrahariStore {
   static final ValueNotifier<List<Map<String, dynamic>>> complaints =
       ValueNotifier<List<Map<String, dynamic>>>([]);
@@ -67,6 +149,10 @@ class BhuPrahariStore {
 
   static void submit(Map<String, dynamic> complaint) {
     complaints.value = [complaint, ...complaints.value];
+  }
+
+  static void replaceAll(List<Map<String, dynamic>> nextComplaints) {
+    complaints.value = nextComplaints;
   }
 
   static void updateAction(String id, String status, String action) {
@@ -904,6 +990,7 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _id = TextEditingController();
   final TextEditingController _pass = TextEditingController();
   bool _obscure = true;
+  bool _loggingIn = false;
 
   @override
   void dispose() {
@@ -912,7 +999,7 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  void _login() {
+  Future<void> _login() async {
     if (_id.text.trim().isEmpty || _pass.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text("Please enter User ID and Password",
@@ -920,10 +1007,41 @@ class _LoginPageState extends State<LoginPage> {
           backgroundColor: Colors.redAccent));
       return;
     }
-    Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-            builder: (context) => const DashboardScreen(isOfficer: true)));
+    setState(() => _loggingIn = true);
+    try {
+      final response = await postBackendJson(
+        "/api/auth/login",
+        jsonEncode({
+          "user_id": _id.text.trim(),
+          "password": _pass.text,
+        }),
+        timeout: const Duration(seconds: 20),
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        await AuthSession.save(
+          data['token'].toString(),
+          data['user'].toString(),
+        );
+        if (!mounted) return;
+        Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+                builder: (context) => const DashboardScreen(isOfficer: true)));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Invalid user ID or password"),
+            backgroundColor: Colors.redAccent));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text("Login failed: $e"),
+          backgroundColor: Colors.redAccent));
+    } finally {
+      if (mounted) setState(() => _loggingIn = false);
+    }
   }
 
   @override
@@ -1150,9 +1268,10 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 22),
               _AnimatedLandingButton(
-                  label: "Login to Dashboard",
+                  label:
+                      _loggingIn ? "Authenticating..." : "Login to Dashboard",
                   icon: Icons.fingerprint_rounded,
-                  onTap: _login,
+                  onTap: _loggingIn ? () {} : () => _login(),
                   primary: true,
                   fullWidth: true),
             ],
@@ -1275,10 +1394,14 @@ class _DashboardScreenState extends State<DashboardScreen>
   // Multi-Modal AI State
   String? _pendingImageBase64;
   String? _pendingImageName;
+  bool _complaintsSyncing = false;
 
   @override
   void initState() {
     super.initState();
+    AuthSession.restore().then((_) {
+      if (mounted && widget.isOfficer) _loadOfficerComplaints();
+    });
     _bootSequence();
   }
 
@@ -1675,7 +1798,37 @@ class _DashboardScreenState extends State<DashboardScreen>
           isFilled: true));
   }
 
-  void _submitBhuPrahariComplaint() {
+  Future<void> _loadOfficerComplaints() async {
+    final token = AuthSession.token;
+    if (token == null || token.isEmpty || _complaintsSyncing) return;
+    setState(() => _complaintsSyncing = true);
+    try {
+      final response = await getBackendJson(
+        "/api/complaints",
+        bearerToken: token,
+        timeout: const Duration(seconds: 20),
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final complaints = (data['complaints'] as List? ?? [])
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+        BhuPrahariStore.replaceAll(complaints);
+      } else if (response.statusCode == 401) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Session expired. Please login again."),
+            backgroundColor: Colors.orange));
+      }
+    } catch (e) {
+      debugPrint("Complaint sync failed: $e");
+    } finally {
+      if (mounted) setState(() => _complaintsSyncing = false);
+    }
+  }
+
+  Future<void> _submitBhuPrahariComplaint() async {
     final target = _searchCtrl.text.trim().isEmpty
         ? "Pinned map location"
         : _searchCtrl.text.trim();
@@ -1697,19 +1850,47 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
 
     final id = BhuPrahariStore.nextId();
-    BhuPrahariStore.submit({
+    final complaint = {
       "id": id,
       "reporter": reporter,
+      "email": "",
       "phone": _isAnonymous ? "" : _citizenPhoneCtrl.text.trim(),
       "target": target,
       "description": description,
       "evidence": _citizenEvidenceName ?? "No photo uploaded",
       "lat": _loc.latitude,
       "lon": _loc.longitude,
+      "state": _stateName,
+      "risk_score": _risk,
+      "area_sqm": _area,
       "status": "New Complaint",
-      "action": "Awaiting user review",
-      "submittedAt": DateTime.now(),
-    });
+      "action": "Sent to state alert workflow",
+      "submittedAt": DateTime.now().toIso8601String(),
+    };
+
+    var submitted = Map<String, dynamic>.from(complaint);
+    var integrationStatus = "local";
+    try {
+      final response = await postBackendJson(
+        "/api/complaints",
+        jsonEncode(complaint),
+        timeout: const Duration(seconds: 25),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        submitted = Map<String, dynamic>.from(data['complaint'] as Map);
+        integrationStatus =
+            (data['integration']?['status'] ?? 'sent').toString();
+      } else {
+        integrationStatus = "backend_${response.statusCode}";
+      }
+    } catch (e) {
+      integrationStatus = "offline";
+      debugPrint("Complaint backend submit failed: $e");
+    }
+
+    BhuPrahariStore.submit(submitted);
+    if (!mounted) return;
 
     setState(() {
       if (!_hasSearched || !_ready) {
@@ -1723,7 +1904,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
 
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text("Complaint submitted: $id"),
+        content: Text(
+            "Complaint submitted: ${submitted['id']} (${integrationStatus == 'sent' ? 'ViaSocket sent' : integrationStatus})"),
         backgroundColor: Colors.green));
   }
 
@@ -2899,7 +3081,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         SizedBox(
           width: double.infinity,
           child: _btn("Submit to Bhu-Prahari", Icons.send_rounded,
-              _submitBhuPrahariComplaint),
+              () => _submitBhuPrahariComplaint()),
         ),
       ]),
     );
@@ -3046,6 +3228,37 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  Future<void> _updateComplaintAction(
+      String id, String status, String action) async {
+    BhuPrahariStore.updateAction(id, status, action);
+    final token = AuthSession.token;
+    if (token == null || token.isEmpty) return;
+    try {
+      final response = await patchBackendJson(
+        "/api/complaints/$id",
+        jsonEncode({"status": status, "action": action}),
+        bearerToken: token,
+        timeout: const Duration(seconds: 20),
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final complaint = Map<String, dynamic>.from(data['complaint'] as Map);
+        BhuPrahariStore.updateAction(
+          complaint['id'].toString(),
+          complaint['status'].toString(),
+          complaint['action'].toString(),
+        );
+      } else if (response.statusCode == 401) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Session expired. Please login again."),
+            backgroundColor: Colors.orange));
+      }
+    } catch (e) {
+      debugPrint("Complaint update sync failed: $e");
+    }
+  }
+
   Widget _officerComplaintCard(Map<String, dynamic> item, bool isMobile) {
     final lat = (item['lat'] as num).toDouble();
     final lon = (item['lon'] as num).toDouble();
@@ -3114,16 +3327,16 @@ class _DashboardScreenState extends State<DashboardScreen>
             });
           }),
           _smallComplaintAction("Start Review", Icons.fact_check_outlined, () {
-            BhuPrahariStore.updateAction(
+            _updateComplaintAction(
                 item['id'].toString(), "Under Review", "User review started");
           }),
           _smallComplaintAction(
               "Field Inspection", Icons.assignment_turned_in_rounded, () {
-            BhuPrahariStore.updateAction(item['id'].toString(),
+            _updateComplaintAction(item['id'].toString(),
                 "Inspection Scheduled", "Field team assigned for verification");
           }),
           _smallComplaintAction("Resolve", Icons.verified_rounded, () {
-            BhuPrahariStore.updateAction(
+            _updateComplaintAction(
                 item['id'].toString(), "Resolved", "Action completed");
           }),
         ]),

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +9,8 @@ import json
 import os
 import re
 import math
+import secrets
+from datetime import datetime, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
@@ -43,6 +45,12 @@ app.add_middleware(
 
 GROQ_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
+VIASOCKET_WEBHOOK_URL = os.getenv("VIASOCKET_WEBHOOK_URL", "")
+OFFICER_USER_ID = os.getenv("OFFICER_USER_ID", "admin")
+OFFICER_PASSWORD = os.getenv("OFFICER_PASSWORD", "Gravity@2026")
+STATE_ALERT_EMAIL_MAP = os.getenv("STATE_ALERT_EMAIL_MAP", "{}")
+AUTH_TOKENS: set[str] = set()
+COMPLAINTS: list[dict] = []
 
 @app.get("/")
 async def root():
@@ -76,12 +84,161 @@ class VisionRequest(BaseModel):
     mime_type: Optional[str] = "image/jpeg"
 
 
+class AuthRequest(BaseModel):
+    user_id: str
+    password: str
+
+
+class ComplaintRequest(BaseModel):
+    id: Optional[str] = None
+    reporter: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    target: str
+    description: str
+    evidence: Optional[str] = None
+    lat: float
+    lon: float
+    state: Optional[str] = None
+    risk_score: Optional[int] = 0
+    area_sqm: Optional[int] = 0
+
+
+class ComplaintActionRequest(BaseModel):
+    status: str
+    action: str
+
+
 def _require_groq_key():
     if not GROQ_KEY:
         raise HTTPException(
             status_code=503,
             detail="GROQ_API_KEY is not configured on the backend",
         )
+
+
+def _state_alert_email(state: str | None) -> str:
+    try:
+        mapping = json.loads(STATE_ALERT_EMAIL_MAP or "{}")
+        return mapping.get((state or "").upper(), mapping.get("DEFAULT", ""))
+    except Exception:
+        return ""
+
+
+def _post_to_viasocket(payload: dict) -> dict:
+    if not VIASOCKET_WEBHOOK_URL:
+        return {"status": "not_configured", "message": "VIASOCKET_WEBHOOK_URL is not set"}
+    try:
+        response = req.post(VIASOCKET_WEBHOOK_URL, json=payload, timeout=20)
+        return {
+            "status": "sent" if response.status_code < 400 else "failed",
+            "status_code": response.status_code,
+            "body": response.text[:500],
+        }
+    except Exception as exc:
+        logger.warning(f"ViaSocket webhook failed: {exc}")
+        return {"status": "failed", "message": str(exc)}
+
+
+def _require_auth(authorization: str | None) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    token = authorization.removeprefix("Bearer ").strip()
+    if token not in AUTH_TOKENS:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return token
+
+
+@app.post("/api/auth/login")
+async def login(request: AuthRequest):
+    if request.user_id.strip() != OFFICER_USER_ID or request.password != OFFICER_PASSWORD:
+        raise HTTPException(status_code=401, detail="Invalid user ID or password")
+    token = secrets.token_urlsafe(32)
+    AUTH_TOKENS.add(token)
+    return {"status": "success", "token": token, "user": request.user_id.strip()}
+
+
+@app.post("/api/complaints")
+async def submit_complaint(request: ComplaintRequest):
+    complaint_id = request.id or f"BHU-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    submitted_at = datetime.now(timezone.utc).isoformat()
+    state = (request.state or "UNKNOWN").upper()
+    complaint = {
+        "id": complaint_id,
+        "reporter": request.reporter,
+        "email": request.email or "",
+        "phone": request.phone or "",
+        "target": request.target,
+        "description": request.description,
+        "evidence": request.evidence or "No photo uploaded",
+        "lat": request.lat,
+        "lon": request.lon,
+        "state": state,
+        "risk_score": request.risk_score or 0,
+        "area_sqm": request.area_sqm or 0,
+        "status": "New Complaint",
+        "action": "Sent to state alert workflow",
+        "submittedAt": submitted_at,
+    }
+    COMPLAINTS.insert(0, complaint)
+
+    alert_email = _state_alert_email(state)
+    viasocket_payload = {
+        "workflow": "bhu_prahari_complaint_state_alert",
+        "database_action": "insert_complaint",
+        "gmail_action": "send_state_alert",
+        "state": state,
+        "state_alert_email": alert_email,
+        "complaint": complaint,
+        "email_subject": f"Bhu-Prahari complaint {complaint_id} - {state}",
+        "email_body": (
+            f"New Bhu-Prahari complaint submitted for {state}.\n\n"
+            f"ID: {complaint_id}\nTarget: {request.target}\n"
+            f"Location: {request.lat}, {request.lon}\n"
+            f"Reporter: {request.reporter}\nEmail: {request.email or 'Not provided'}\n"
+            f"Phone: {request.phone or 'Not provided'}\n"
+            f"Risk: {request.risk_score or 0}/100\nArea: {request.area_sqm or 0} sq.m\n\n"
+            f"Details: {request.description}"
+        ),
+    }
+    integration = _post_to_viasocket(viasocket_payload)
+    return {"status": "success", "complaint": complaint, "integration": integration}
+
+
+@app.get("/api/complaints")
+async def list_complaints(authorization: str | None = Header(default=None)):
+    _require_auth(authorization)
+    return {"status": "success", "complaints": COMPLAINTS}
+
+
+@app.patch("/api/complaints/{complaint_id}")
+async def update_complaint(
+    complaint_id: str,
+    request: ComplaintActionRequest,
+    authorization: str | None = Header(default=None),
+):
+    _require_auth(authorization)
+    for complaint in COMPLAINTS:
+        if complaint["id"] != complaint_id:
+            continue
+        complaint["status"] = request.status
+        complaint["action"] = request.action
+        complaint["updatedAt"] = datetime.now(timezone.utc).isoformat()
+        integration = _post_to_viasocket({
+            "workflow": "bhu_prahari_complaint_status_update",
+            "database_action": "update_complaint_status",
+            "gmail_action": "send_status_update",
+            "complaint_id": complaint_id,
+            "status": request.status,
+            "action": request.action,
+            "complaint": complaint,
+        })
+        return {
+            "status": "success",
+            "complaint": complaint,
+            "integration": integration,
+        }
+    raise HTTPException(status_code=404, detail="Complaint not found")
 
 
 # ========================================================
