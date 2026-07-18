@@ -1764,7 +1764,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           _ready = true;
           _status = risk > 0
               ? "POTENTIAL ENCROACHMENT FLAGGED - ${accuracy.toStringAsFixed(1)}% CONFIDENCE"
-              : "NO PROTECTED ENCROACHMENT PREDICTED - ${accuracy.toStringAsFixed(1)}% CONFIDENCE";
+              : "LAND REVIEW READY - ${accuracy.toStringAsFixed(1)}% CONFIDENCE";
           _risk = risk;
           _area = data['area_sqm'] ?? 0;
           _val =
@@ -1785,13 +1785,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                 prediction['label']?.toString() ?? "Prediction ready";
           } else {
             _predictionLabel =
-                _risk > 0 ? "Review Required" : "No flagged construction";
+                _risk > 0 ? "Review Required" : "Manual Land Review";
           }
           if (data['env_data'] != null) {
             _envData = Map<String, dynamic>.from(data['env_data']);
           }
           _notice = data['legal_notice_text'] ??
-              "No protected-boundary encroachment is predicted from currently mapped data. Field verification is recommended for official closure.";
+              "Blue-boundary land review is ready. Field verification is recommended for official closure.";
 
           String voiceSum = data['voice_summary'] ?? "Scan complete.";
           _speak(voiceSum);
@@ -1800,8 +1800,8 @@ class _DashboardScreenState extends State<DashboardScreen>
           if (data['govt_boundary'] != null) {
             _govtPolygons.add(Polygon(
                 points: parsePoly(data['govt_boundary']),
-                color: Colors.red.withValues(alpha: 0.08),
-                borderColor: Colors.redAccent,
+                color: Colors.blue.withValues(alpha: 0.08),
+                borderColor: Colors.blueAccent,
                 borderStrokeWidth: 4,
                 isFilled: true));
           }
@@ -1881,12 +1881,12 @@ class _DashboardScreenState extends State<DashboardScreen>
     _landRate = 0;
     _officialLandSource =
         "Official land-rate source will appear after live scan";
-    _predictionLabel = "No flagged construction";
+    _predictionLabel = "Manual Land Review";
     _envData = {"temp": 32, "aqi": 145, "soil": "Alluvial", "moisture": 45};
     _notice =
-        "No protected-boundary encroachment is predicted from local demo state for $sector. Run a live scan for authoritative screening.";
+        "Blue-boundary land review is ready for $sector. Run a live scan for authoritative screening.";
     _status = fallbackReason == null
-        ? "NO PROTECTED ENCROACHMENT PREDICTED - DEMO AUDIT READY"
+        ? "LAND REVIEW READY - DEMO AUDIT READY"
         : "NEUTRAL DEMO AUDIT READY - BACKEND FALLBACK";
     _govtPolygons
       ..clear()
@@ -1897,8 +1897,8 @@ class _DashboardScreenState extends State<DashboardScreen>
             LatLng(center.latitude + delta, center.longitude + delta),
             LatLng(center.latitude + delta, center.longitude - delta),
           ],
-          color: Colors.red.withValues(alpha: 0.08),
-          borderColor: Colors.redAccent,
+          color: Colors.blue.withValues(alpha: 0.08),
+          borderColor: Colors.blueAccent,
           borderStrokeWidth: 3,
           isFilled: true));
     _anomalyPolygons.clear();
@@ -4419,12 +4419,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                       curve: Curves.easeOutCubic,
                       delay: 200.ms)
                   .slideY(begin: 0.2, end: 0),
-              _stat(
-                      "Estimated Govt Cost",
-                      _val > 0
-                          ? "Rs. ${(_val / 100000).toStringAsFixed(1)} L"
-                          : "No flagged cost",
-                      Colors.greenAccent)
+                      _stat(
+                       "Estimated Govt Cost",
+                       _val > 0
+                           ? "Rs. ${(_val / 100000).toStringAsFixed(1)} L"
+                           : "Review pending",
+                       Colors.greenAccent)
                   .animate()
                   .fadeIn(
                       duration: 600.ms,
@@ -4475,10 +4475,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ]),
               const SizedBox(height: 10),
               Text(
-                  _risk > 0
-                      ? "Protected-boundary screening: potential encroachment flagged for field verification."
-                      : "Protected-boundary screening: no encroachment predicted from mapped data.",
-                  style: TextStyle(
+                   _risk > 0
+                       ? "Protected-boundary screening: potential encroachment flagged for field verification."
+                       : "Blue-boundary screening: manual illegal-land review ready.",
+                   style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.5),
                       fontSize: 11)),
               const SizedBox(height: 25),
@@ -5223,13 +5223,13 @@ class _DashboardScreenState extends State<DashboardScreen>
     final hasFlaggedEncroachment = _risk > 0;
     final findingSentence = hasFlaggedEncroachment
         ? "Potential protected-boundary encroachment has been flagged and requires field verification."
-        : "No protected-boundary encroachment is predicted from the currently mapped data.";
+        : "Blue-boundary land review is ready and requires field verification.";
     final dispatchFinding = hasFlaggedEncroachment
         ? "Potential protected-boundary encroachment flagged via satellite and OSM screening. Field verification is recommended."
-        : "No protected-boundary encroachment is predicted from mapped screening data. Field verification may still be used for official closure.";
+        : "Blue-boundary land review prepared from mapped screening data. Field verification is recommended for official closure.";
     final costLabel = _val > 0
         ? "Rs. ${(_val / 100000).toStringAsFixed(1)} Lakhs"
-        : "No flagged cost";
+        : "Review pending";
     final rateLabel = _landRate > 0
         ? "Rs. ${_landRate.toStringAsFixed(0)}/sqm"
         : "Official rate pending";
@@ -5481,7 +5481,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   onPressed: () async {
                                     Navigator.pop(c);
                                     final smsBody = Uri.encodeComponent(
-                                        'GRAVITY AI NOTICE: ${hasFlaggedEncroachment ? 'Potential protected-boundary encroachment flagged' : 'No protected-boundary encroachment predicted'} at ${_searchCtrl.text.toUpperCase()} '
+                                        'GRAVITY AI NOTICE: ${hasFlaggedEncroachment ? 'Potential protected-boundary encroachment flagged' : 'Blue-boundary land review ready'} at ${_searchCtrl.text.toUpperCase()} '
                                         '(${_loc.latitude.toStringAsFixed(4)}, ${_loc.longitude.toStringAsFixed(4)}). '
                                         'Area: $_area sq.m | Govt cost: $costLabel | Rate: $rateLabel. '
                                         'Ref: GRV-AUDIT-449-A');
