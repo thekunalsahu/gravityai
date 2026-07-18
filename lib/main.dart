@@ -5214,49 +5214,83 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Future<void> _captureEvidence() async {
     try {
-      _status = "📍 ACQUIRING GPS LOCK...";
+      _status = "ACQUIRING GPS LOCK...";
       setState(() {});
 
-      // Get current position
-      final pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high);
+      final evidencePosition = await _getFieldEvidencePosition();
 
-      _status = "📸 OPENING SECURE CAMERA...";
+      _status = "OPENING SECURE CAMERA...";
       setState(() {});
 
-      FilePickerResult? result =
-          await FilePicker.pickFiles(type: FileType.image);
+      final result = await FilePicker.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: false,
+      );
 
       if (!mounted) return;
       if (result != null) {
+        final fileName = result.files.single.name;
         setState(() {
           _fieldEvidences.insert(0, {
-            "name":
-                "IMG_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.JPG",
-            "lat": pos.latitude,
-            "lon": pos.longitude,
+            "name": fileName.isEmpty
+                ? "IMG_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.JPG"
+                : fileName,
+            "lat": evidencePosition.latitude,
+            "lon": evidencePosition.longitude,
             "time": DateFormat('HH:mm:ss').format(DateTime.now()),
           });
           _tasksList.insert(0, {
             "title": "Field Evidence Recorded",
             "desc":
-                "Geotagged proof captured at ${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}",
+                "Geotagged proof captured at ${evidencePosition.latitude.toStringAsFixed(4)}, ${evidencePosition.longitude.toStringAsFixed(4)}",
             "status": "Success",
             "time": DateFormat('HH:mm a').format(DateTime.now())
           });
-          _status = "✅ EVIDENCE SAVED TO BLOCKCHAIN";
+          _status = "EVIDENCE SAVED TO BLOCKCHAIN";
         });
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text("Geotagged Evidence Saved."),
             backgroundColor: Colors.green));
       } else {
-        setState(() => _status = "⚠️ CAPTURE CANCELLED");
+        setState(() => _status = "CAPTURE CANCELLED");
       }
     } catch (e) {
       if (!mounted) return;
-      setState(() => _status = "❌ GEOTAG ERROR: $e");
+      setState(() => _status = "GEOTAG ERROR: $e");
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
+    }
+  }
+
+  Future<LatLng> _getFieldEvidencePosition() async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return _loc;
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      return _loc;
+    }
+
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 12),
+      );
+      return LatLng(pos.latitude, pos.longitude);
+    } catch (_) {
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        return LatLng(lastKnown.latitude, lastKnown.longitude);
+      }
+      return _loc;
     }
   }
 
