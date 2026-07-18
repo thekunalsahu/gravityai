@@ -13,6 +13,7 @@ import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'core/theme.dart';
@@ -5217,20 +5218,20 @@ class _DashboardScreenState extends State<DashboardScreen>
       _status = "ACQUIRING GPS LOCK...";
       setState(() {});
 
-      final evidencePosition = await _getFieldEvidencePosition();
+      final evidencePosition = await _requireFieldEvidenceGps();
 
       _status = "OPENING SECURE CAMERA...";
       setState(() {});
 
-      final result = await FilePicker.pickFiles(
-        type: FileType.image,
-        allowMultiple: false,
-        withData: false,
+      final photo = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 1920,
       );
 
       if (!mounted) return;
-      if (result != null) {
-        final fileName = result.files.single.name;
+      if (photo != null) {
+        final fileName = photo.name;
         setState(() {
           _fieldEvidences.insert(0, {
             "name": fileName.isEmpty
@@ -5263,10 +5264,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  Future<LatLng> _getFieldEvidencePosition() async {
+  Future<LatLng> _requireFieldEvidenceGps() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      return _loc;
+      throw "Mobile GPS/location service on karke phir evidence capture karein.";
     }
 
     var permission = await Geolocator.checkPermission();
@@ -5276,7 +5277,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
-      return _loc;
+      throw "Location permission allow karein. GPS geotag ke bina camera nahi khulega.";
     }
 
     try {
@@ -5290,7 +5291,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (lastKnown != null) {
         return LatLng(lastKnown.latitude, lastKnown.longitude);
       }
-      return _loc;
+      throw "GPS lock nahi mila. Open sky/location on karke dubara try karein.";
     }
   }
 
