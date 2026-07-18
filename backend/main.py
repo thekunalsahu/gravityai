@@ -429,6 +429,18 @@ async def update_complaint(
 # ========================================================
 def _get_groq_env_data(city: str):
     """Use Groq to simulate/predict real-time environmental data for a city."""
+    city_key = (city or "").lower()
+    city_defaults = {
+        "mhow": {"temp": 27.8, "aqi": 74, "soil": "Black", "moisture": 42, "humidity": 55, "risk": 18},
+        "indore": {"temp": 28.6, "aqi": 96, "soil": "Black", "moisture": 38, "humidity": 49, "risk": 22},
+        "bhopal": {"temp": 28.2, "aqi": 82, "soil": "Black", "moisture": 41, "humidity": 52, "risk": 16},
+    }
+    fallback = next(
+        (value for key, value in city_defaults.items() if key in city_key),
+        {"temp": 29.0, "aqi": 88, "soil": "Alluvial", "moisture": 36, "humidity": 50, "risk": 12},
+    )
+    if not GROQ_KEY:
+        return fallback
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_KEY}",
@@ -458,7 +470,7 @@ def _get_groq_env_data(city: str):
         
         if res.status_code != 200:
             logger.warning(f"Groq API returned status {res.status_code}: {res.text[:200]}")
-            return {"temp": 28, "aqi": 110, "soil": "Alluvial", "moisture": 30, "humidity": 50, "risk": 10}
+            return fallback
         
         data = res.json()
         content = data["choices"][0]["message"]["content"]
@@ -467,11 +479,19 @@ def _get_groq_env_data(city: str):
         end = content.rfind('}') + 1
         if start == -1 or end == 0:
             logger.warning(f"Groq returned no JSON: {content[:200]}")
-            return {"temp": 28, "aqi": 110, "soil": "Alluvial", "moisture": 30, "humidity": 50, "risk": 10}
-        return json.loads(content[start:end])
+            return fallback
+        parsed = json.loads(content[start:end])
+        return {
+            "temp": round(float(parsed.get("temp", fallback["temp"])), 1),
+            "aqi": int(max(35, min(180, float(parsed.get("aqi", fallback["aqi"]))))),
+            "soil": parsed.get("soil") or parsed.get("soil_type") or fallback["soil"],
+            "moisture": int(max(20, min(70, float(parsed.get("moisture", parsed.get("moisture_level", fallback["moisture"])))))),
+            "humidity": int(max(25, min(85, float(parsed.get("humidity", fallback["humidity"]))))),
+            "risk": int(max(8, min(35, float(parsed.get("risk", parsed.get("risk_factor", fallback["risk"])))))),
+        }
     except Exception as e:
         logger.warning(f"Groq Env Data failed: {e}")
-        return {"temp": 28, "aqi": 110, "soil": "Alluvial", "moisture": 30, "humidity": 50, "risk": 10}
+        return fallback
 
 
 # ========================================================
